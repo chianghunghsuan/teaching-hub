@@ -57,6 +57,14 @@ const sensitiveKeywords = [
   "政黨",
   "立法院",
   "總統",
+  "副總統",
+  "行政院",
+  "立委",
+  "議員",
+  "市長",
+  "政府",
+  "蕭美琴",
+  "李四川",
   "藍白",
   "民進黨",
   "國民黨",
@@ -115,9 +123,9 @@ async function main() {
     return;
   }
 
-  const preparedItems = await summarizeForClassroom(candidates);
+  const preparedItems = await prepareClassroomItems(candidates);
   if (preparedItems.length === 0) {
-    console.log("GitHub Models returned no classroom-safe items. Nothing to insert.");
+    console.log("No classroom-safe items prepared. Nothing to insert.");
     await cleanupOldNews();
     return;
   }
@@ -138,6 +146,25 @@ async function main() {
   const inserted = await insertNews(newItems);
   console.log(`Inserted ${inserted.length} news item(s) into Supabase.`);
   await cleanupOldNews();
+}
+
+async function prepareClassroomItems(candidates) {
+  try {
+    const items = await summarizeForClassroom(candidates);
+    if (items.length > 0) return items;
+
+    console.warn(
+      "GitHub Models returned no classroom-safe items. Falling back to rule-based summaries.",
+    );
+  } catch (error) {
+    console.warn(
+      `GitHub Models unavailable. Falling back to rule-based summaries: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  return buildRuleBasedClassroomItems(candidates);
 }
 
 async function getNewsCandidates() {
@@ -377,6 +404,108 @@ function parseModelJsonContent(content) {
   }
 
   throw new Error("GitHub Models response was not valid JSON.");
+}
+
+function buildRuleBasedClassroomItems(candidates) {
+  const selected = candidates
+    .filter((candidate) => !hasKeyword(candidate, sensitiveKeywords))
+    .slice(0, NEWS_TARGET_ITEMS);
+
+  return selected.map((candidate) => {
+    const tag = inferTag(candidate);
+    return {
+      date: today,
+      tag,
+      content: buildRuleBasedContent(candidate, tag),
+      source_url: candidate.source_url,
+    };
+  });
+}
+
+function inferTag(candidate) {
+  if (hasKeyword(candidate, ["颱風", "天氣", "氣象", "雷雨", "大雨", "氣候"])) {
+    return "天氣";
+  }
+  if (
+    hasKeyword(candidate, [
+      "AI",
+      "人工智慧",
+      "半導體",
+      "晶片",
+      "機器人",
+      "資料中心",
+      "電池",
+      "能源",
+      "科技",
+    ])
+  ) {
+    return "科技";
+  }
+  if (
+    hasKeyword(candidate, [
+      "物理",
+      "科學",
+      "太空",
+      "火箭",
+      "天文",
+      "宇宙",
+      "NASA",
+      "研究",
+      "地震",
+      "環境",
+      "海洋",
+    ])
+  ) {
+    return "科學";
+  }
+  if (hasKeyword(candidate, ["日本", "美國", "英國", "熊本", "國際"])) {
+    return "國際";
+  }
+  return "社會";
+}
+
+function buildRuleBasedContent(candidate, tag) {
+  const title = cleanTitleForClassroom(candidate.title);
+  const question = discussionQuestionFor(tag);
+
+  return `今天可用「${title}」帶學生連結生活中的${topicLabelFor(tag)}議題，先從新聞標題觀察現象，再討論背後可能牽涉的科學概念。延伸討論：${question}`;
+}
+
+function discussionQuestionFor(tag) {
+  const questions = {
+    科學: "如果要把這件事轉成一個可驗證的科學問題，我們會需要哪些資料？",
+    科技: "這項技術解決了什麼問題，又可能帶來哪些新的限制或風險？",
+    天氣: "我們可以從哪些氣象資料判斷預報可信度，而不是只看單一標題？",
+    國際: "不同國家的條件不同，這則新聞中的做法適合直接套用在台灣嗎？",
+    社會: "這件事和日常生活有什麼關聯，可以用哪些數據來討論它的影響？",
+  };
+
+  return questions[tag] ?? questions.社會;
+}
+
+function topicLabelFor(tag) {
+  const labels = {
+    科學: "科學",
+    科技: "科技",
+    天氣: "天氣與自然",
+    國際: "國際",
+    社會: "社會",
+  };
+
+  return labels[tag] ?? labels.社會;
+}
+
+function cleanTitleForClassroom(title) {
+  return stripHtml(title)
+    .replace(/\s*[-|｜]\s*[^-|｜]{1,16}$/u, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+function hasKeyword(candidate, keywords) {
+  const haystack = `${candidate.title ?? ""} ${candidate.summary ?? ""}`;
+  return keywords.some((keyword) => haystack.includes(keyword));
 }
 
 async function insertNews(items) {
