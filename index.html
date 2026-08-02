@@ -140,10 +140,22 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 
 .news-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
 .badge{font-size:.7rem;font-weight:700;color:var(--ink-soft);background:var(--surface-2);border:1px solid var(--line);border-radius:20px;padding:3px 11px}
-.note-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);border-left:3px solid var(--accent);padding:13px 15px;margin-bottom:11px}
-.note-card .nmeta{font-size:.72rem;color:var(--ink-faint);font-weight:700;margin-bottom:5px;display:flex;gap:8px;align-items:center}
+.note-card{appearance:none;width:100%;display:block;text-align:left;font-family:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);border-left:3px solid var(--accent);padding:13px 15px;margin-bottom:11px;cursor:pointer}
+.note-card:hover{background:var(--surface-2)}
+.note-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note-card .nmeta{font-size:.72rem;color:var(--ink-faint);font-weight:700;margin-bottom:7px;display:flex;gap:8px;align-items:center;justify-content:space-between}
+.note-card .nmeta-main{display:flex;gap:8px;align-items:center;min-width:0}
 .note-card .ntag{background:color-mix(in srgb,var(--accent) 14%,var(--surface));color:var(--accent);border-radius:5px;padding:1px 8px}
-.note-card .ntx{font-size:.9rem;line-height:1.55}
+.note-card .ntx{font-size:.9rem;line-height:1.55;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.note-card .nmore{font-size:.72rem;color:var(--accent);font-weight:800;white-space:nowrap}
+.news-detail{display:grid;gap:13px}
+.news-detail .detail-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;color:var(--ink-faint);font-size:.78rem;font-weight:700}
+.news-detail .detail-tag{background:color-mix(in srgb,var(--accent) 14%,var(--surface));color:var(--accent);border-radius:5px;padding:2px 8px}
+.news-section{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+.news-section h4{margin:0 0 5px;font-size:.78rem;color:var(--ink-soft);letter-spacing:.06em;font-weight:800}
+.news-section p{margin:0;font-size:.94rem;line-height:1.75}
+.source-btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:var(--accent);color:#fff;border-radius:10px;padding:11px 13px;font-size:.92rem;font-weight:800}
+.source-host{font-size:.76rem;color:var(--ink-faint);font-weight:700}
 
 .empty{text-align:center;padding:38px 18px;border:1.5px dashed var(--line-strong);border-radius:var(--radius);color:var(--ink-soft);background:var(--surface)}
 
@@ -221,6 +233,9 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:v
   .pbody{padding:0 14px 14px}
   .sheet{border-radius:16px 16px 0 0}
   .sheet-actions button{padding:13px}
+  .note-card{padding:12px 13px}
+  .note-card .ntx{-webkit-line-clamp:4}
+  .news-section p{font-size:.9rem}
 }
 </style>
 </head>
@@ -431,11 +446,78 @@ function renderSched(){
 /* ===== 時事 ===== */
 function renderNotes(){
   const el=document.getElementById("notesBody");
-  const rows=DB.news.slice().sort((a,b)=>b.date.localeCompare(a.date));
-  document.getElementById("newsUpd").textContent=rows.length?("最後整理 "+rows[0].date.replaceAll("-","/")):"";
-  el.innerHTML=rows.length?rows.map(n=>`<div class="note-card"><div class="nmeta"><span class="ntag">${n.tag||"分享"}</span>${n.date.replaceAll("-","/")}</div><div class="ntx">${n.content}</div></div>`).join("")
-    :`<div class="empty">還沒有時事筆記。</div>`;
+  const rows=DB.news.slice().sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.created_at||"").localeCompare(a.created_at||""));
+  document.getElementById("newsUpd").textContent=rows.length?("最後整理 "+fmtDate(rows[0].date)):"";
+  el.innerHTML="";
+  if(!rows.length){ el.innerHTML=`<div class="empty">還沒有時事筆記。</div>`; return; }
+  rows.forEach(n=>{
+    const detail=parseNewsContent(n.content);
+    const card=document.createElement("button");
+    card.type="button";
+    card.className="note-card";
+    card.innerHTML=`<div class="nmeta"><span class="nmeta-main"><span class="ntag">${esc(n.tag||"分享")}</span>${esc(fmtDate(n.date))}</span><span class="nmore">詳解與原文</span></div><div class="ntx">${esc(detail.summary||n.content||"")}</div>`;
+    card.onclick=()=>openNewsDetail(n);
+    el.appendChild(card);
+  });
 }
+
+function openNewsDetail(n){
+  const detail=parseNewsContent(n.content);
+  const url=safeHttpUrl(n.source_url);
+  const title=detail.title||"時事詳解";
+  const source=url?`<a class="source-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">開啟文章連結</a><div class="source-host">${esc(hostLabel(url))}</div>`:`<div class="source-host">沒有文章連結</div>`;
+  openSheet(esc(title), `<div class="news-detail">
+    <div class="detail-meta"><span class="detail-tag">${esc(n.tag||"分享")}</span><span>${esc(fmtDate(n.date))}</span></div>
+    <div class="news-section"><h4>摘要</h4><p>${esc(detail.summary)}</p></div>
+    <div class="news-section"><h4>課堂解釋</h4><p>${esc(detail.explanation)}</p></div>
+    ${detail.question?`<div class="news-section"><h4>延伸討論</h4><p>${esc(detail.question)}</p></div>`:""}
+    ${source}
+  </div>`);
+}
+
+function parseNewsContent(raw){
+  const text=String(raw||"").replace(/\r\n/g,"\n").trim();
+  const lines=text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  const parts={};
+  lines.forEach(line=>{
+    const m=line.match(/^(摘要|重點|課堂解釋|解釋|延伸討論|討論問題)[:：]\s*(.+)$/u);
+    if(m)parts[m[1]]=m[2].trim();
+  });
+  const question=parts["延伸討論"]||parts["討論問題"]||((text.match(/(?:延伸討論|討論問題)[:：]\s*([\s\S]+)$/u)||[])[1]||"").trim();
+  let summary=parts["摘要"]||parts["重點"]||"";
+  let explanation=parts["課堂解釋"]||parts["解釋"]||"";
+  if(!summary){
+    const beforeQ=text.split(/(?:延伸討論|討論問題)[:：]/u)[0].trim();
+    summary=firstSentence(beforeQ||text,128);
+  }
+  if(!explanation){
+    const beforeQ=text.split(/(?:延伸討論|討論問題)[:：]/u)[0].trim();
+    explanation=beforeQ&&beforeQ!==summary?beforeQ:"這則時事可以先從新聞中的現象出發，請學生辨認它和生活、自然或科技的連結，再討論背後需要哪些資料、測量或模型才能做出可靠判斷。";
+  }
+  return {
+    title:extractNewsTitle(summary)||extractNewsTitle(text),
+    summary:summary||"這則時事可以作為課堂討論素材。",
+    explanation,
+    question,
+  };
+}
+
+function firstSentence(text,max){
+  const clean=String(text||"").replace(/\s+/g," ").trim();
+  const m=clean.match(/^(.+?[。！？?])/u);
+  const sentence=(m?m[1]:clean).trim();
+  return sentence.length>max?sentence.slice(0,max)+"…":sentence;
+}
+
+function extractNewsTitle(text){
+  const m=String(text||"").match(/「([^」]{4,90})」/u);
+  return m?m[1].trim():"";
+}
+
+function fmtDate(value){ return value?String(value).replaceAll("-","/"):""; }
+function safeHttpUrl(value){ try{ const u=new URL(String(value||"")); return /^https?:$/.test(u.protocol)?u.toString():""; }catch{return "";} }
+function hostLabel(value){ try{ return new URL(value).hostname.replace(/^www\./,""); }catch{return "原文來源";} }
+function esc(value){ return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch])); }
 
 /* ===== 編輯：課堂 ===== */
 function openDaySheet(ds){

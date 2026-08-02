@@ -142,21 +142,38 @@ async function main() {
     return;
   }
 
-  const existingUrls = await findExistingSourceUrls(
+  const existingRows = await findExistingSourceRows(
     preparedItems.map((item) => item.source_url),
   );
+  const existingUrls = new Set(existingRows.keys());
   const newItems = preparedItems.filter(
     (item) => !existingUrls.has(item.source_url),
   );
+  const refreshItems = preparedItems.filter((item) => {
+    const existing = existingRows.get(item.source_url);
+    return (
+      existing &&
+      isStructuredNewsContent(item.content) &&
+      !isStructuredNewsContent(existing.content)
+    );
+  });
 
-  if (newItems.length === 0) {
-    console.log("All prepared items already exist in Supabase. Nothing to insert.");
+  if (newItems.length === 0 && refreshItems.length === 0) {
+    console.log("All prepared items already exist in Supabase. Nothing to insert or update.");
     await cleanupOldNews();
     return;
   }
 
-  const inserted = await insertNews(newItems);
-  console.log(`Inserted ${inserted.length} news item(s) into Supabase.`);
+  if (newItems.length > 0) {
+    const inserted = await insertNews(newItems);
+    console.log(`Inserted ${inserted.length} news item(s) into Supabase.`);
+  }
+
+  if (refreshItems.length > 0) {
+    const updated = await updateExistingNews(refreshItems);
+    console.log(`Updated ${updated} existing news item(s) with detailed content.`);
+  }
+
   await cleanupOldNews();
 }
 
@@ -298,7 +315,10 @@ async function summarizeForClassroom(candidates) {
     "請從候選新聞中挑出 3 到 5 則最適合國高中學生課堂分享的內容。",
     "優先選擇和物理、科學、科技、天氣、自然現象、能源、環境相關的題材。",
     "過濾政治敏感、暴力、血腥、八卦、犯罪細節、未證實傳聞，或不適合課堂討論的內容。",
-    "每則 content 請用繁體中文，1 到 3 句，能直接跟學生分享，且包含一個延伸討論問題。",
+    "每則 content 請用繁體中文，並固定使用三行格式：",
+    "摘要：1 句，濃縮新聞重點，能直接給學生看。",
+    "課堂解釋：2 到 4 句，用國高中學生聽得懂的方式解釋背景、科學或科技概念，盡量連到物理、自然或生活觀察。",
+    "延伸討論：1 個能引導學生思考的問題。",
     "tag 只能是：科學、科技、天氣、國際、社會。",
     "article_index 必須使用候選新聞中的編號，不要自創來源。",
     '只輸出 JSON object，格式：{"items":[{"article_index":1,"tag":"科學","content":"..."}]}',
@@ -374,17 +394,17 @@ async function summarizeForClassroom(candidates) {
     .slice(0, NEWS_TARGET_ITEMS);
 }
 
-async function findExistingSourceUrls(sourceUrls) {
-  const existing = new Set();
+async function findExistingSourceRows(sourceUrls) {
+  const existing = new Map();
 
   for (const sourceUrl of new Set(sourceUrls)) {
     const url = new URL(SUPABASE_NEWS_URL);
-    url.searchParams.set("select", "source_url");
+    url.searchParams.set("select", "source_url,content");
     url.searchParams.set("source_url", `eq.${sourceUrl}`);
 
     const rows = await supabaseJson(url, { method: "GET" }, "check duplicate");
     if (Array.isArray(rows) && rows.length > 0) {
-      existing.add(sourceUrl);
+      existing.set(sourceUrl, rows[0]);
     }
   }
 
@@ -480,7 +500,20 @@ function buildRuleBasedContent(candidate, tag) {
   const title = cleanTitleForClassroom(candidate.title);
   const question = discussionQuestionFor(tag);
 
-  return `今天可用「${title}」帶學生連結生活中的${topicLabelFor(tag)}議題，先從新聞標題觀察現象，再討論背後可能牽涉的科學概念。延伸討論：${question}`;
+  return [
+    `摘要：今天可用「${title}」帶學生連結生活中的${topicLabelFor(tag)}議題。`,
+    `課堂解釋：可以先讓學生觀察新聞標題中的現象或技術，再追問背後需要哪些資料、測量或模型來判斷。這則新聞適合用來練習把生活事件轉成可討論的科學問題，也能提醒學生不要只看標題就下結論。`,
+    `延伸討論：${question}`,
+  ].join("\n");
+}
+
+function isStructuredNewsContent(content) {
+  const text = String(content ?? "");
+  return (
+    /(^|\n)摘要[:：]/u.test(text) &&
+    /(^|\n)課堂解釋[:：]/u.test(text) &&
+    /(^|\n)延伸討論[:：]/u.test(text)
+  );
 }
 
 function discussionQuestionFor(tag) {
@@ -533,6 +566,34 @@ async function insertNews(items) {
     },
     "insert news",
   );
+}
+
+async function updateExistingNews(items) {
+  let updated = 0;
+
+  for (const item of items) {
+    const url = new URL(SUPABASE_NEWS_URL);
+    url.searchParams.set("source_url", `eq.${item.source_url}`);
+    const rows = await supabaseJson(
+      url,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          prefer: "return=representation",
+        },
+        body: JSON.stringify({
+          date: item.date,
+          tag: item.tag,
+          content: item.content,
+        }),
+      },
+      "update existing news",
+    );
+    updated += Array.isArray(rows) ? rows.length : 0;
+  }
+
+  return updated;
 }
 
 async function cleanupOldNews() {
