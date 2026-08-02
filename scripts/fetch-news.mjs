@@ -16,6 +16,14 @@ const NEWS_TIME_ZONE = process.env.NEWS_TIME_ZONE ?? "Asia/Taipei";
 const NEWS_LOOKBACK_DAYS = parsePositiveInt(process.env.NEWS_LOOKBACK_DAYS, 2);
 const NEWS_CANDIDATES = parsePositiveInt(process.env.NEWS_CANDIDATES, 12);
 const NEWS_TARGET_ITEMS = parsePositiveInt(process.env.NEWS_TARGET_ITEMS, 5);
+const NEWS_MAX_PER_SOURCE = parsePositiveInt(
+  process.env.NEWS_MAX_PER_SOURCE,
+  3,
+);
+const NEWS_MAX_PER_TOPIC = parsePositiveInt(
+  process.env.NEWS_MAX_PER_TOPIC,
+  2,
+);
 const DELETE_NEWS_OLDER_THAN_DAYS = parseNonNegativeInt(
   process.env.DELETE_NEWS_OLDER_THAN_DAYS,
   30,
@@ -52,19 +60,75 @@ const scienceKeywords = [
   "海洋",
   "醫學",
 ];
+const studentKeywords = [
+  "學生",
+  "高中",
+  "高職",
+  "大學",
+  "大學生",
+  "研究所",
+  "學測",
+  "分科",
+  "志願",
+  "科系",
+  "職涯",
+  "實驗高中",
+  "科學班",
+  "奧林匹亞",
+  "教育",
+  "校園",
+  "科展",
+];
+const industryKeywords = [
+  "科技業",
+  "裁員",
+  "徵才",
+  "職缺",
+  "工程師",
+  "軟體",
+  "硬體",
+  "AI",
+  "機器人",
+  "自動化",
+  "半導體",
+  "晶片",
+  "資料中心",
+  "雲端",
+  "蘋果",
+  "Apple",
+  "微軟",
+  "Microsoft",
+  "Google",
+  "OpenAI",
+  "NVIDIA",
+  "輝達",
+  "台積電",
+  "鴻海",
+];
+const publicLifeKeywords = [
+  "COVID",
+  "新冠",
+  "疫情",
+  "疫苗",
+  "公共衛生",
+  "食安",
+  "毒油",
+  "食品",
+  "油品",
+  "醫療",
+  "藥物",
+  "能源",
+  "環境",
+  "電力",
+  "交通",
+  "天氣",
+  "氣象",
+  "颱風",
+  "地震",
+];
 const sensitiveKeywords = [
   "選舉",
   "政黨",
-  "立法院",
-  "總統",
-  "副總統",
-  "行政院",
-  "立委",
-  "議員",
-  "市長",
-  "政府",
-  "蕭美琴",
-  "李四川",
   "藍白",
   "民進黨",
   "國民黨",
@@ -79,6 +143,7 @@ const sensitiveKeywords = [
   "暴力",
   "死傷",
   "股價",
+  "股市",
   "個股",
   "指數",
   "台股",
@@ -90,15 +155,33 @@ const sensitiveKeywords = [
   "漲跌",
   "營收",
   "法人",
+  "財報",
+  "自由現金流",
+  "資本支出",
+  "收割期",
+  "商機",
+  "ETF",
+  "解放軍",
+  "軍事",
+  "軍演",
+  "火箭筒",
+  "戰士",
+  "國防",
+  "身亡",
+  "死亡",
+  "死者",
+  "罹難",
 ];
 
 const rssFeeds = [
   directRssFeed("科技新報", "https://technews.tw/feed/"),
   directRssFeed("PanSci 泛科學", "https://pansci.asia/feed"),
   googleNewsSearchFeed("科學 OR 物理 OR 天文 OR 太空 OR 氣象 OR 地震"),
-  googleNewsSearchFeed("科技 OR AI OR 人工智慧 OR 半導體 OR 能源"),
-  googleNewsSearchFeed("台灣 天氣 OR 自然 OR 環境 OR 科學"),
-  googleNewsSearchFeed("台灣 新聞"),
+  googleNewsSearchFeed("科技 OR AI OR 人工智慧 OR 半導體 OR 機器人 OR 能源"),
+  googleNewsSearchFeed("台灣 學生 OR 大學 OR 高中 OR 科學班 OR 奧林匹亞 OR 教育"),
+  googleNewsSearchFeed("台灣 裁員 OR 職缺 OR 工程師 OR 科技業 OR 台積電 OR 蘋果 OR 微軟"),
+  googleNewsSearchFeed("台灣 COVID OR 疫情 OR 食安 OR 毒油 OR 公共衛生"),
+  googleNewsSearchFeed("台灣 天氣 OR 自然 OR 環境 OR 生活"),
 ];
 
 main().catch((error) => {
@@ -213,8 +296,14 @@ async function getNewsCandidates() {
     }
   }
 
-  return [...byTitle.values()]
-    .sort((a, b) => b.score - a.score || b.publishedTime - a.publishedTime)
+  return selectDiverseCandidates(
+    [...byTitle.values()]
+      .filter((item) => !isHardBlockedCandidate(item))
+      .sort(
+      (a, b) => b.score - a.score || b.publishedTime - a.publishedTime,
+      ),
+    NEWS_CANDIDATES,
+  )
     .slice(0, NEWS_CANDIDATES)
     .map((item, index) => ({
       article_index: index + 1,
@@ -224,6 +313,38 @@ async function getNewsCandidates() {
       summary: item.summary,
       source_url: item.source_url,
     }));
+}
+
+function selectDiverseCandidates(items, limit) {
+  const selected = [];
+  const selectedUrls = new Set();
+  const sourceCounts = new Map();
+  const topicCounts = new Map();
+
+  for (const item of items) {
+    const sourceKey = normalizeSourceKey(item.source);
+    const topicKey = candidateTopicKey(item);
+
+    if ((sourceCounts.get(sourceKey) ?? 0) >= NEWS_MAX_PER_SOURCE) continue;
+    if ((topicCounts.get(topicKey) ?? 0) >= NEWS_MAX_PER_TOPIC) continue;
+
+    selected.push(item);
+    selectedUrls.add(item.source_url);
+    sourceCounts.set(sourceKey, (sourceCounts.get(sourceKey) ?? 0) + 1);
+    topicCounts.set(topicKey, (topicCounts.get(topicKey) ?? 0) + 1);
+
+    if (selected.length >= limit) return selected;
+  }
+
+  for (const item of items) {
+    if (selectedUrls.has(item.source_url)) continue;
+    selected.push(item);
+    selectedUrls.add(item.source_url);
+
+    if (selected.length >= limit) return selected;
+  }
+
+  return selected;
 }
 
 async function fetchRssFeed(feed) {
@@ -291,12 +412,22 @@ function normalizeRssItem(item, feedLabel) {
 
   if (!sourceUrl || !title) return null;
 
-  const haystack = `${title} ${summary}`;
+  const haystack = candidateText({
+    title,
+    summary,
+    source,
+    source_url: sourceUrl,
+  });
   const scienceScore = countKeywordHits(haystack, scienceKeywords) * 10;
+  const studentScore = countKeywordHits(haystack, studentKeywords) * 14;
+  const industryScore = countKeywordHits(haystack, industryKeywords) * 12;
+  const publicLifeScore = countKeywordHits(haystack, publicLifeKeywords) * 11;
   const sensitiveScore = countKeywordHits(haystack, sensitiveKeywords) * -25;
-  const recencyScore = publishedTime
-    ? Math.max(0, Math.round((publishedTime - Date.now()) / 36e5))
-    : -100;
+  const sourcePenalty = isFinanceHeavySource({ source, source_url: sourceUrl })
+    ? -80
+    : 0;
+  const hoursOld = publishedTime ? (Date.now() - publishedTime) / 36e5 : 999;
+  const recencyScore = publishedTime ? Math.max(-48, 48 - Math.round(hoursOld)) : -100;
 
   return {
     title,
@@ -305,7 +436,14 @@ function normalizeRssItem(item, feedLabel) {
     publishedTime,
     summary: summary.slice(0, 360),
     source_url: sourceUrl,
-    score: scienceScore + sensitiveScore + recencyScore,
+    score:
+      scienceScore +
+      studentScore +
+      industryScore +
+      publicLifeScore +
+      sensitiveScore +
+      sourcePenalty +
+      recencyScore,
   };
 }
 
@@ -313,11 +451,14 @@ async function summarizeForClassroom(candidates) {
   const prompt = [
     "你是台灣補習班物理老師的課堂時事助理。",
     "請從候選新聞中挑出 3 到 5 則最適合國高中學生課堂分享的內容。",
-    "優先選擇和物理、科學、科技、天氣、自然現象、能源、環境相關的題材。",
-    "過濾政治敏感、暴力、血腥、八卦、犯罪細節、未證實傳聞，或不適合課堂討論的內容。",
+    "優先選擇和學生、升學、科系探索、職涯方向、日常生活、公共健康、食安、科學、科技、AI、機器人、半導體、能源、天氣、自然現象相關的題材。",
+    "如果是科技產業新聞，優先挑對學生理解未來工作、技能需求、公司策略轉變、產業趨勢有幫助的內容，例如裁員、徵才、職缺暴增、AI 發展、機器人能力提升、大公司的重大產品或政策改變。",
+    "如果是公共政策新聞，只保留與學生、教育、校園、AI 工具、公共生活直接相關的具體政策，不要政黨攻防、政治口水或選戰內容。",
+    "如果是公共事件或健康議題，優先選有事實、數據、研究、制度改變或生活影響的內容，例如 COVID-19、食安、公共衛生、能源、災害防救。",
+    "過濾血腥暴力、八卦、犯罪細節、未證實傳聞、純投資炒股、純股價漲跌或不適合課堂討論的內容。",
     "每則 content 請用繁體中文，並固定使用三行格式：",
     "摘要：1 句，濃縮新聞重點，能直接給學生看。",
-    "課堂解釋：2 到 4 句，用國高中學生聽得懂的方式解釋背景、科學或科技概念，盡量連到物理、自然或生活觀察。",
+    "課堂解釋：2 到 4 句，用國高中學生聽得懂的方式解釋背景、科學、科技、產業或公共生活概念，盡量連到物理、自然、職涯或生活觀察。",
     "延伸討論：1 個能引導學生思考的問題。",
     "tag 只能是：科學、科技、天氣、國際、社會。",
     "article_index 必須使用候選新聞中的編號，不要自創來源。",
@@ -440,7 +581,19 @@ function parseModelJsonContent(content) {
 
 function buildRuleBasedClassroomItems(candidates) {
   const selected = candidates
-    .filter((candidate) => !hasKeyword(candidate, sensitiveKeywords))
+    .filter(
+      (candidate) =>
+        !hasKeyword(candidate, sensitiveKeywords) &&
+        !isFinanceHeavySource(candidate),
+    )
+    .filter((candidate, index, items) => {
+      const topicKey = candidateTopicKey(candidate);
+      const currentTopicCount = items
+        .slice(0, index)
+        .filter((item) => candidateTopicKey(item) === topicKey).length;
+
+      return currentTopicCount < NEWS_MAX_PER_TOPIC;
+    })
     .slice(0, NEWS_TARGET_ITEMS);
 
   return selected.map((candidate) => {
@@ -455,6 +608,26 @@ function buildRuleBasedClassroomItems(candidates) {
 }
 
 function inferTag(candidate) {
+  if (
+    hasKeyword(candidate, [
+      "COVID",
+      "新冠",
+      "疫情",
+      "疫苗",
+      "食安",
+      "毒油",
+      "食品",
+      "油品",
+      "教育",
+      "學生",
+      "大學",
+      "高中",
+      "科學班",
+      "奧林匹亞",
+    ])
+  ) {
+    return "社會";
+  }
   if (hasKeyword(candidate, ["颱風", "天氣", "氣象", "雷雨", "大雨", "氣候"])) {
     return "天氣";
   }
@@ -498,11 +671,12 @@ function inferTag(candidate) {
 
 function buildRuleBasedContent(candidate, tag) {
   const title = cleanTitleForClassroom(candidate.title);
-  const question = discussionQuestionFor(tag);
+  const question = discussionQuestionFor(tag, candidate);
+  const explanation = explanationForCandidate(candidate, tag);
 
   return [
     `摘要：今天可用「${title}」帶學生連結生活中的${topicLabelFor(tag)}議題。`,
-    `課堂解釋：可以先讓學生觀察新聞標題中的現象或技術，再追問背後需要哪些資料、測量或模型來判斷。這則新聞適合用來練習把生活事件轉成可討論的科學問題，也能提醒學生不要只看標題就下結論。`,
+    `課堂解釋：${explanation}`,
     `延伸討論：${question}`,
   ].join("\n");
 }
@@ -516,7 +690,22 @@ function isStructuredNewsContent(content) {
   );
 }
 
-function discussionQuestionFor(tag) {
+function discussionQuestionFor(tag, candidate) {
+  if (hasKeyword(candidate, ["裁員", "徵才", "職缺", "工程師", "科系", "職涯"])) {
+    return "從這則產業消息來看，未來哪些能力、工具或科系可能更有需求？";
+  }
+  if (hasKeyword(candidate, ["AI", "人工智慧", "機器人", "自動化"])) {
+    return "這項 AI 或機器人技術如果真的普及，最可能先改變哪些工作或生活場景？";
+  }
+  if (hasKeyword(candidate, ["蘋果", "Apple", "微軟", "Microsoft", "Google", "OpenAI", "NVIDIA", "輝達", "台積電"])) {
+    return "大公司這次的策略改變，反映出哪些技術方向正在變重要？";
+  }
+  if (hasKeyword(candidate, ["COVID", "新冠", "疫情", "疫苗", "食安", "毒油", "公共衛生"])) {
+    return "如果要判斷這件事對日常生活的風險高不高，我們最需要先看哪些數據？";
+  }
+  if (hasKeyword(candidate, ["學生", "大學", "高中", "科學班", "奧林匹亞", "教育"])) {
+    return "這則新聞反映出哪些學習路徑、能力訓練或升學方向值得提早準備？";
+  }
   const questions = {
     科學: "如果要把這件事轉成一個可驗證的科學問題，我們會需要哪些資料？",
     科技: "這項技術解決了什麼問題，又可能帶來哪些新的限制或風險？",
@@ -526,6 +715,28 @@ function discussionQuestionFor(tag) {
   };
 
   return questions[tag] ?? questions.社會;
+}
+
+function explanationForCandidate(candidate, tag) {
+  if (hasKeyword(candidate, ["裁員", "徵才", "職缺", "工程師", "科系", "職涯"])) {
+    return "這類新聞不只是公司消息，也能拿來談產業景氣、技能需求和工作型態怎麼改變。帶學生看這則新聞時，可以從企業為什麼縮編或擴編、哪些能力被放大、哪些工具開始成為基本配備切入，幫他們把新聞和未來選系、選課、培養能力連起來。";
+  }
+  if (hasKeyword(candidate, ["AI", "人工智慧", "機器人", "自動化"])) {
+    return "可以先讓學生辨認這項技術到底做到了什麼，再追問它是靠資料、演算法、感測器，還是機械結構進步才變得可行。這類題材很適合連到物理、資訊和工程設計，也能讓學生思考技術能力和真實使用場景之間還有多少差距。";
+  }
+  if (hasKeyword(candidate, ["蘋果", "Apple", "微軟", "Microsoft", "Google", "OpenAI", "NVIDIA", "輝達", "台積電"])) {
+    return "大公司的重大產品、策略或投資改變，常常反映整個產業未來幾年的方向。課堂上可以帶學生看：公司為什麼現在做這個決定、它背後押注的是哪種技術能力，以及這會如何影響未來市場、工作內容與學習重點。";
+  }
+  if (hasKeyword(candidate, ["COVID", "新冠", "疫情", "疫苗", "食安", "毒油", "公共衛生"])) {
+    return "這類題材適合訓練學生分辨『事件本身』和『風險判斷』是兩回事。可以帶他們看數據、檢驗方法、制度回應和民眾行為怎麼互相影響，理解公共健康或食安議題不是只靠情緒反應，而是要看證據與制度。";
+  }
+  if (hasKeyword(candidate, ["學生", "大學", "高中", "科學班", "奧林匹亞", "教育"])) {
+    return "這則新聞可以直接連到學生的學習路徑與升學想像。課堂上可以從訓練方式、課程設計、競賽能力或教育資源差異切入，幫學生理解某些機會背後需要的長期準備，而不是只看到結果。";
+  }
+  if (tag === "天氣") {
+    return "可以先讓學生觀察新聞中的現象，再追問背後需要哪些資料、測量或模型來判斷。這則新聞適合用來練習把生活事件轉成可討論的科學問題，也能提醒學生不要只看標題就下結論。";
+  }
+  return "可以先讓學生觀察新聞標題中的現象或技術，再追問背後需要哪些資料、測量或模型來判斷。這則新聞適合用來練習把生活事件轉成可討論的科學問題，也能提醒學生不要只看標題就下結論。";
 }
 
 function topicLabelFor(tag) {
@@ -548,8 +759,109 @@ function cleanTitleForClassroom(title) {
     .slice(0, 80);
 }
 
+function candidateText(candidate) {
+  return `${candidate.title ?? ""} ${candidate.summary ?? ""} ${candidate.source ?? ""} ${candidate.source_url ?? ""}`;
+}
+
+function normalizeSourceKey(source) {
+  return String(source ?? "").trim().toLowerCase() || "unknown";
+}
+
+function candidateTopicKey(candidate) {
+  if (hasKeyword(candidate, ["颱風", "天氣", "氣象", "雷雨", "大雨", "氣候"])) {
+    return "weather";
+  }
+  if (
+    hasKeyword(candidate, [
+      "COVID",
+      "新冠",
+      "疫情",
+      "疫苗",
+      "公共衛生",
+      "食安",
+      "毒油",
+      "食品",
+      "油品",
+    ])
+  ) {
+    return "public-health";
+  }
+  if (
+    hasKeyword(candidate, [
+      "學生",
+      "高中",
+      "高職",
+      "大學",
+      "大學生",
+      "志願",
+      "科系",
+      "教育",
+      "校園",
+      "科學班",
+      "奧林匹亞",
+      "科展",
+    ])
+  ) {
+    return "education";
+  }
+  if (hasKeyword(candidate, ["裁員", "徵才", "職缺", "工程師", "職涯"])) {
+    return "career";
+  }
+  if (
+    hasKeyword(candidate, [
+      "蘋果",
+      "Apple",
+      "微軟",
+      "Microsoft",
+      "Google",
+      "OpenAI",
+      "NVIDIA",
+      "輝達",
+    ])
+  ) {
+    return "big-tech";
+  }
+  if (hasKeyword(candidate, ["AI", "人工智慧", "機器人", "自動化"])) {
+    return "ai-robotics";
+  }
+  if (hasKeyword(candidate, ["半導體", "晶片", "台積電", "鴻海", "能源"])) {
+    return "industry";
+  }
+  if (
+    hasKeyword(candidate, [
+      "科學",
+      "物理",
+      "天文",
+      "太空",
+      "NASA",
+      "地震",
+      "海洋",
+      "醫學",
+    ])
+  ) {
+    return "science";
+  }
+  return "general";
+}
+
+function isFinanceHeavySource(candidate) {
+  const text = candidateText(candidate);
+  return (
+    /finance\./i.test(text) ||
+    /cnyes/i.test(text) ||
+    /moneydj/i.test(text) ||
+    /yahoo.*股市/i.test(text) ||
+    /udn.*股市/i.test(text) ||
+    /(鉅亨|股市|財經)/.test(text)
+  );
+}
+
+function isHardBlockedCandidate(candidate) {
+  return hasKeyword(candidate, sensitiveKeywords);
+}
+
 function hasKeyword(candidate, keywords) {
-  const haystack = `${candidate.title ?? ""} ${candidate.summary ?? ""}`;
+  const haystack = candidateText(candidate);
   return keywords.some((keyword) => haystack.includes(keyword));
 }
 
