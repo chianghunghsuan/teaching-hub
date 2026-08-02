@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  models: read
 
 jobs:
   fetch-news:
@@ -16,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GITHUB_MODELS_MODEL: openai/gpt-4o-mini
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: gemini-2.5-flash
       SUPABASE_NEWS_URL: https://pytmyuuoerhrsytwjtbq.supabase.co/rest/v1/news
       SUPABASE_PUBLISHABLE_KEY: sb_publishable_l4cGpyjxQua5ICikOiGqqw_s-_gYVnB
       NEWS_TIME_ZONE: Asia/Taipei
