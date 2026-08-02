@@ -2,7 +2,7 @@
 <html lang="zh-Hant-TW">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
 <title>教學管理台</title>
@@ -26,7 +26,8 @@
   --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.4);
 }}
 *{box-sizing:border-box}
-body{margin:0;font-family:var(--font);background:var(--paper);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font-family:var(--font);background:var(--paper);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 .tnum{font-variant-numeric:tabular-nums}
 .wrap{padding:clamp(14px,3vw,32px);max-width:1120px;margin:0 auto;padding-bottom:90px}
 
@@ -146,7 +147,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 
 .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:opacity .2s;z-index:40}
 .backdrop.on{opacity:1;pointer-events:auto}
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--surface);border-radius:18px 18px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.2);padding:18px 18px 26px;transform:translateY(110%);transition:transform .22s;max-width:560px;margin:0 auto;max-height:88vh;overflow-y:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--surface);border-radius:18px 18px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.2);padding:18px 18px calc(24px + env(safe-area-inset-bottom));transform:translateY(110%);transition:transform .22s;max-width:560px;margin:0 auto;max-height:88vh;overflow-y:auto}
 .sheet.on{transform:translateY(0)}
 .sheet h3{margin:0 0 14px;font-size:1.1rem;font-weight:800}
 .field{margin-bottom:12px}
@@ -163,10 +164,54 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .sess-row .info b{font-weight:700}
 .sess-row .info small{color:var(--ink-soft);display:block;font-size:.76rem}
 .sess-row.cancelled .info{opacity:.5;text-decoration:line-through}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:10px;font-weight:700;font-size:.9rem;opacity:0;pointer-events:none;transition:.2s;z-index:60}
+.toast{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:10px;font-weight:700;font-size:.9rem;opacity:0;pointer-events:none;transition:.2s;z-index:60}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--paper);z-index:80;font-weight:700;color:var(--ink-soft);padding:20px;text-align:center}
 footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:.76rem;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+
+/* ===== 手機版（iPhone 直式 ~393px）===== */
+@media (max-width:640px){
+  .wrap{padding:12px 12px 90px}
+  .head{gap:10px;margin-bottom:14px}
+  .brand h1{font-size:1.35rem}
+  .brand .sub{font-size:.7rem;letter-spacing:.08em}
+  .hstats{width:100%}
+  .stat{flex:1;min-width:0;padding:7px 12px}
+  .tabs{gap:0}
+  .tab{padding:9px 11px;font-size:.88rem}
+
+  .calbar{flex-wrap:wrap;gap:8px}
+  .calbar h2{font-size:1.05rem}
+  .nav button,.today-btn{padding:6px 9px;font-size:.82rem}
+  .hint{font-size:.72rem}
+
+  /* 月曆填滿螢幕，不用左右捲 */
+  .cal-scroll{overflow-x:visible}
+  .cal{min-width:0}
+  .cal-h div{padding:5px 1px;font-size:.6rem;letter-spacing:0}
+  .cell{min-height:60px;padding:3px 2px;gap:2px}
+  .cell-head{gap:2px;flex-wrap:nowrap;overflow:hidden;min-height:15px}
+  .dnum{font-size:.72rem;padding:0 2px}
+  .mark{font-size:.5rem;padding:0 3px}
+  .day-tag{font-size:.52rem;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .chip{display:block;font-size:.56rem;line-height:1.2;padding:2px 3px;border-left-width:3px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chip .pd{display:none}
+  .legend{gap:9px;font-size:.74rem}
+
+  /* 表格 / 卡片 */
+  th,td{padding:7px 10px}
+  .mc-h{padding:11px 12px}
+  .report summary,.report .rbody{padding-left:12px;padding-right:12px}
+  .summary-strip .s-item{min-width:0}
+  .grid-cards{grid-template-columns:1fr}
+
+  /* 大一點的可點按鈕 */
+  .ib{padding:6px 9px;font-size:1.05rem;min-width:34px}
+  .pcard summary{padding:14px 14px}
+  .pbody{padding:0 14px 14px}
+  .sheet{border-radius:16px 16px 0 0}
+  .sheet-actions button{padding:13px}
+}
 </style>
 </head>
 <body>
