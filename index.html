@@ -155,6 +155,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .news-section{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
 .news-section h4{margin:0 0 5px;font-size:.78rem;color:var(--ink-soft);letter-spacing:.06em;font-weight:800}
 .news-section p{margin:0;font-size:.94rem;line-height:1.75}
+.news-section ul{margin:8px 0 0 18px;padding:0;display:grid;gap:6px}
+.news-section li{font-size:.94rem;line-height:1.7}
+.news-section p + p{margin-top:10px}
 .source-btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:var(--accent);color:#fff;border-radius:10px;padding:11px 13px;font-size:.92rem;font-weight:800}
 .source-host{font-size:.76rem;color:var(--ink-faint);font-weight:700}
 
@@ -469,7 +472,7 @@ function openNewsDetail(n){
   const url=safeHttpUrl(n.source_url);
   const title=detail.title||"新聞詳細資料";
   const source=url?`<a class="source-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">開啟文章連結</a><div class="source-host">${esc(hostLabel(url))}</div>`:`<div class="source-host">沒有文章連結</div>`;
-  const sections=detail.sections.map(sec=>`<div class="news-section"><h4>${esc(sec.label)}</h4><p>${esc(sec.content)}</p></div>`).join("");
+  const sections=detail.sections.map(sec=>`<div class="news-section"><h4>${esc(sec.label)}</h4>${renderNewsSectionContent(sec.content)}</div>`).join("");
   openSheet(esc(title), `<div class="news-detail">
     <div class="detail-meta"><span class="detail-tag">${esc(n.tag||"未分類")}</span><span>${esc(fmtDate(n.date))}</span></div>
     ${sections}
@@ -479,11 +482,19 @@ function openNewsDetail(n){
 
 function parseNewsContent(raw){
   const text=String(raw||"").replace(/\r\n/g,"\n").trim();
-  const lines=text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  const lines=text.split(/\n/).map(s=>s.trim()).filter(Boolean);
   const sections=[];
+  let current=null;
   lines.forEach(line=>{
-    const m=line.match(/^([^:：]{1,12})[:：]\s*(.+)$/u);
-    if(m)sections.push({label:m[1].trim(),content:m[2].trim()});
+    const m=line.match(/^([^:：]{1,12})[:：]\s*(.*)$/u);
+    if(m){
+      current={label:m[1].trim(),content:m[2].trim()};
+      sections.push(current);
+      return;
+    }
+    if(current){
+      current.content=current.content?`${current.content}\n${line}`:line;
+    }
   });
   let summary=(sections.find(sec=>["摘要","重點"].includes(sec.label))||{}).content||"";
   if(!summary){
@@ -499,6 +510,36 @@ function parseNewsContent(raw){
     summary:summary||"這則新聞目前沒有可直接顯示的摘要。",
     sections,
   };
+}
+function renderNewsSectionContent(content){
+  const blocks=[];
+  const lines=String(content||"").split(/\n/).map(s=>s.trim()).filter(Boolean);
+  if(!lines.length)return `<p>目前沒有更多內容。</p>`;
+  let paragraphLines=[];
+  let listItems=[];
+  const flushParagraph=()=>{
+    if(!paragraphLines.length)return;
+    blocks.push(`<p>${esc(paragraphLines.join(" "))}</p>`);
+    paragraphLines=[];
+  };
+  const flushList=()=>{
+    if(!listItems.length)return;
+    blocks.push(`<ul>${listItems.map(item=>`<li>${esc(item)}</li>`).join("")}</ul>`);
+    listItems=[];
+  };
+  lines.forEach(line=>{
+    const bullet=line.match(/^[-•●▪‣]\s*(.+)$/u)||line.match(/^\d+\.\s*(.+)$/u);
+    if(bullet){
+      flushParagraph();
+      listItems.push(bullet[1].trim());
+      return;
+    }
+    flushList();
+    paragraphLines.push(line);
+  });
+  flushParagraph();
+  flushList();
+  return blocks.join("")||`<p>${esc(String(content||""))}</p>`;
 }
 function firstSentence(text,max){
   const clean=String(text||"").replace(/\s+/g," ").trim();

@@ -32,6 +32,7 @@ const DELETE_NEWS_OLDER_THAN_DAYS = parseNonNegativeInt(
   process.env.DELETE_NEWS_OLDER_THAN_DAYS,
   30,
 );
+const FORCE_REFRESH = process.env.NEWS_FORCE_REFRESH === "1";
 const DRY_RUN =
   process.argv.includes("--dry-run") || process.env.NEWS_DRY_RUN === "1";
 
@@ -422,8 +423,7 @@ async function main() {
     const existing = existingRows.get(item.source_url);
     return (
       existing &&
-      isStructuredNewsContent(item.content) &&
-      !isStructuredNewsContent(existing.content)
+      contentNeedsRefresh(existing.content, item.content)
     );
   });
 
@@ -843,14 +843,15 @@ async function summarizeForClassroom(candidates) {
     "如果來源只是部會活動、表揚、致詞、蒞臨、開幕、參訪或例行公告，除非它明確涉及科學教育制度、人才培育、職涯機會、重大技術政策或實際數據，否則不要選。",
     "請盡量涵蓋不同面向：學生與教育至少 1 則、科技產業或職涯至少 1 則、科學或太空至少 1 則，剩餘再從國際、公共健康、經濟、政策中挑最有資訊量的內容。",
     "你會收到每則新聞的 title、summary、source，部分還有 article_context。數字、金額、比例、名次、時間點，只能使用候選資料或 article_context 裡明確出現的資訊，不能自己猜。",
-    "如果來源沒有提供可直接採信的具體數字，就在『關鍵數字』寫：來源未提供可直接採信的具體數字。",
+    "如果來源沒有提供可直接採信的具體數字，就在『關鍵數據』列點寫：- 來源未提供可直接採信的具體數字。",
+    "不要寫空話，例如『可以連結生活議題』『值得學生思考』『反映趨勢』這種沒有細節的句子；每一段都要回到事件本身、因果、影響對象、制度背景或技術細節。",
     "過濾血腥、八卦、未證實傳聞、犯罪細節、純股價漲跌、純投資炒作或不適合課堂討論的內容。",
-    "每則 content 請用繁體中文，並固定使用五行格式：",
-    "摘要：1 句，濃縮新聞重點，能直接給學生看。",
-    "背景：2 到 4 句，用國高中學生聽得懂的方式解釋背景、制度、科學、科技、產業或公共生活概念。",
-    "關鍵數字：整理 1 到 3 個具體數字、名次、金額、比例、時間點或規模。",
-    "影響：2 到 3 句，說明它對學生、一般人生活、台灣、產業或未來工作的意義。",
-    "延伸討論：1 個能引導學生思考的問題。",
+    "每則 content 請用繁體中文，並固定使用以下段落格式，段落標籤請完全一致：",
+    "摘要：2 句內，濃縮新聞核心事件與結果。",
+    "課堂解釋：至少 4 句，說清楚事件背景、重要機制、牽涉的產業/制度/科學概念、為什麼會發生，不要只有概括形容。",
+    "關鍵數據：列 3 到 6 點，每點一行，以「- 」開頭，整理數字、時間點、金額、名次、規模、地點或對象；沒有數據時也要誠實說明。",
+    "反思結論：至少 3 句，整理這則新聞真正值得學生吸收的觀察、限制、風險、機會，以及你認為最重要的結論。",
+    "延伸討論：列 2 點，每點一行，以「- 」開頭，題目要能讓學生進一步討論，而不是只回答是非題。",
     "tag 只能是：科學、科技、天氣、國際、社會。",
     "article_index 必須使用候選新聞中的編號，不要自創來源。",
     '只輸出 JSON object，格式：{"items":[{"article_index":1,"tag":"科學","content":"..."}]}',
@@ -1066,27 +1067,55 @@ function inferTag(candidate) {
 
 function buildRuleBasedContent(candidate, tag) {
   const title = cleanTitleForClassroom(candidate.title);
-  const question = discussionQuestionFor(tag, candidate);
   const explanation = explanationForCandidate(candidate, tag);
-  const keyFigures = keyFiguresForCandidate(candidate);
-  const impact = impactForCandidate(candidate, tag);
+  const keyFigureLines = keyFigureLinesForCandidate(candidate);
+  const articleDigest = articleDigestForCandidate(candidate);
+  const reflection = reflectionForCandidate(candidate, tag);
+  const discussionLines = discussionLinesForCandidate(tag, candidate);
 
   return [
-    `摘要：今天可用「${title}」帶學生連結生活中的${topicLabelFor(tag)}議題。`,
-    `背景：${explanation}`,
-    `關鍵數字：${keyFigures}`,
-    `影響：${impact}`,
-    `延伸討論：${question}`,
+    `摘要：${title} 這則新聞值得帶進課堂，因為它不只是單一事件，還連到${topicLabelFor(tag)}議題在真實世界中的變化。${summaryConclusionForCandidate(candidate, tag)}`,
+    `課堂解釋：${explanation}\n${articleDigest}`,
+    `關鍵數據：\n${keyFigureLines.join("\n")}`,
+    `反思結論：${reflection}`,
+    `延伸討論：\n${discussionLines.join("\n")}`,
   ].join("\n");
 }
 
 function isStructuredNewsContent(content) {
   const text = String(content ?? "");
   return (
-    /(^|\n)摘要[:：]/u.test(text) &&
-    /(^|\n)(課堂解釋|背景|影響)[:：]/u.test(text) &&
-    /(^|\n)延伸討論[:：]/u.test(text)
+    hasStructuredSection(text, ["摘要"]) &&
+    hasStructuredSection(text, ["課堂解釋", "背景", "深入解析"]) &&
+    hasStructuredSection(text, ["延伸討論"])
   );
+}
+
+function isDetailedNewsContent(content) {
+  const text = String(content ?? "");
+  return (
+    isStructuredNewsContent(text) &&
+    hasStructuredSection(text, ["關鍵數據", "關鍵數字"]) &&
+    hasStructuredSection(text, ["反思結論", "結論", "影響"])
+  );
+}
+
+function contentNeedsRefresh(existingContent, nextContent) {
+  if (!String(nextContent ?? "").trim()) return false;
+  if (FORCE_REFRESH && String(existingContent ?? "").trim() !== String(nextContent ?? "").trim()) {
+    return true;
+  }
+  return (
+    isDetailedNewsContent(nextContent) &&
+    !isDetailedNewsContent(existingContent)
+  );
+}
+
+function hasStructuredSection(text, labels) {
+  return new RegExp(
+    `(^|\\n)(?:${labels.map(escapeRegExp).join("|")})[:：]`,
+    "u",
+  ).test(String(text ?? ""));
 }
 
 function discussionQuestionFor(tag, candidate) {
@@ -1190,6 +1219,102 @@ function impactForCandidate(candidate, tag) {
   return "這則新聞的價值不只在事件本身，也在於它能幫學生把日常觀察連到更大的制度、科學或社會脈絡。";
 }
 
+function summaryConclusionForCandidate(candidate, tag) {
+  if (hasKeyword(candidate, ["地震", "颱風", "氣象", "天氣"])) {
+    return "真正值得注意的不是標題本身，而是災害或自然現象如何影響供應鏈、判斷模型與日常決策。";
+  }
+  if (tag === "科技") {
+    return "它背後通常反映的是技術能力、產業投資和工作需求的重新分配。";
+  }
+  if (tag === "國際") {
+    return "它的重點也不只在事件本身，而是後續對能源、物價、產業與政策判斷的連鎖影響。";
+  }
+  return "重點不只是知道發生了什麼，而是看懂它為什麼重要、影響誰、接下來可能怎麼變。";
+}
+
+function articleDigestForCandidate(candidate) {
+  const snippets = extractContextSentences(candidate, 3);
+  if (!snippets.length) {
+    return "如果只看標題，很容易把它誤解成單一事件；課堂上要追問的是事件牽涉哪些對象、在哪個時間點發生、規模有多大，以及後續會怎麼發展。";
+  }
+
+  return snippets.join(" ");
+}
+
+function keyFigureLinesForCandidate(candidate) {
+  const contextualLines = extractFigureContextLines(candidate);
+  const publishedLine = candidate.published
+    ? `- 發布時間：${String(candidate.published).slice(0, 10)}`
+    : "";
+  const sourceLine = candidate.source ? `- 資料來源：${candidate.source}` : "";
+  const lines = [...contextualLines];
+
+  if (publishedLine) lines.push(publishedLine);
+  if (sourceLine) lines.push(sourceLine);
+
+  if (!lines.length) {
+    return ["- 來源未提供可直接採信的具體數字。"];
+  }
+
+  return lines.slice(0, 6);
+}
+
+function reflectionForCandidate(candidate, tag) {
+  const impact = impactForCandidate(candidate, tag);
+  const caution = cautionForCandidate(candidate, tag);
+  const takeaway = takeawayForCandidate(candidate, tag);
+  return [impact, caution, takeaway].join(" ");
+}
+
+function discussionLinesForCandidate(tag, candidate) {
+  return [
+    `- ${discussionQuestionFor(tag, candidate)}`,
+    `- ${followUpQuestionForCandidate(tag, candidate)}`,
+  ];
+}
+
+function cautionForCandidate(candidate, tag) {
+  if (hasKeyword(candidate, ["AI", "人工智慧", "機器人", "半導體"])) {
+    return "這類新聞最容易被講成『技術很厲害』，但真正該追的是它的限制、成本、人才門檻和落地場景。";
+  }
+  if (hasKeyword(candidate, ["戰爭", "衝突", "油價", "供應鏈"])) {
+    return "看國際衝突時，不能只停在立場判斷，還要分辨哪些是短期事件、哪些會變成長期的經濟和產業壓力。";
+  }
+  if (tag === "社會") {
+    return "社會與教育新聞最怕只記住事件名稱，卻沒有拆開制度、資源差異和長期效果。";
+  }
+  return "這類題材最怕只吸收標題情緒，卻沒有把事件拆成事實、機制和後續影響。";
+}
+
+function takeawayForCandidate(candidate, tag) {
+  if (hasKeyword(candidate, ["學生", "科學班", "奧林匹亞", "教育"])) {
+    return "對學生來說，最重要的吸收不是羨慕結果，而是看懂背後需要哪些準備、資源與能力。";
+  }
+  if (hasKeyword(candidate, ["裁員", "徵才", "職缺", "工程師", "職涯"])) {
+    return "對升學和職涯規劃來說，這類新聞最有價值的地方，是幫助學生提早理解市場真正需要的能力和工具。";
+  }
+  if (tag === "科技") {
+    return "如果能把這則新聞和實際科系、技能、產業鏈位置連起來，它才會從新奇資訊變成真正有用的判斷材料。";
+  }
+  return "真正有用的學習不是把新聞背下來，而是知道下次遇到類似議題時，該用哪些資料和角度判斷。";
+}
+
+function followUpQuestionForCandidate(tag, candidate) {
+  if (hasKeyword(candidate, ["地震", "颱風", "天氣", "氣象"])) {
+    return "如果你是企業、政府或學校決策者，面對這種風險時最先要準備的資料和備案會是什麼？";
+  }
+  if (hasKeyword(candidate, ["AI", "人工智慧", "機器人", "半導體"])) {
+    return "如果把這則新聞拉長到 3 到 5 年來看，哪些工作會被放大，哪些能力可能被淘汰？";
+  }
+  if (hasKeyword(candidate, ["教育", "學生", "科學班", "奧林匹亞"])) {
+    return "如果你是學生本人，看到這則新聞後，最值得立刻開始累積的是哪一種能力或作品？";
+  }
+  if (tag === "國際") {
+    return "如果同樣的事件發生在台灣，最可能先衝擊哪一個產業、哪一群人，為什麼？";
+  }
+  return "如果把這則新聞拆成『事實、原因、數據、影響、判斷』五格，你覺得哪一格最需要再補資料？";
+}
+
 function topicLabelFor(tag) {
   const labels = {
     科學: "科學",
@@ -1225,6 +1350,45 @@ function candidateText(candidate) {
 
 function candidateTitleText(candidate) {
   return [candidate.title ?? "", candidate.source ?? ""].join(" ").trim();
+}
+
+function extractContextSentences(candidate, limit = 3) {
+  const text = [candidate.summary ?? "", candidate.article_context ?? ""]
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return [];
+
+  const sentences = text
+    .split(/(?<=[。！？!?])\s*/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 18);
+
+  return [...new Set(sentences)].slice(0, limit);
+}
+
+function extractFigureContextLines(candidate) {
+  const text = candidateText(candidate);
+  if (!text) return [];
+
+  const pattern =
+    /\d+(?:\.\d+)?\s?(?:%|％|億元|兆元|億|萬人|萬|千|美元|美金|元|年|月|日|小時|分鐘|公里|公尺|MW|GW|℃|度|人|名|家|場|次|面|顆|兆)/g;
+  const lines = [];
+  let match;
+
+  while ((match = pattern.exec(text)) !== null && lines.length < 4) {
+    const snippet = text
+      .slice(
+        Math.max(0, match.index - 18),
+        Math.min(text.length, match.index + match[0].length + 24),
+      )
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!snippet) continue;
+    lines.push(`- ${snippet}`);
+  }
+
+  return [...new Set(lines)];
 }
 
 function extractInterestingFigures(candidate) {
