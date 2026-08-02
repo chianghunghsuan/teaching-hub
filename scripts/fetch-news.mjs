@@ -875,7 +875,7 @@ async function summarizeForClassroom(candidates) {
     generationConfig: {
       temperature: 0.25,
       responseMimeType: "application/json",
-      maxOutputTokens: 8192,
+      maxOutputTokens: 32768,
     },
   });
 
