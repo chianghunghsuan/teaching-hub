@@ -14,15 +14,19 @@ const GITHUB_MODELS_URL =
   "https://models.github.ai/inference/chat/completions";
 const NEWS_TIME_ZONE = process.env.NEWS_TIME_ZONE ?? "Asia/Taipei";
 const NEWS_LOOKBACK_DAYS = parsePositiveInt(process.env.NEWS_LOOKBACK_DAYS, 2);
-const NEWS_CANDIDATES = parsePositiveInt(process.env.NEWS_CANDIDATES, 12);
-const NEWS_TARGET_ITEMS = parsePositiveInt(process.env.NEWS_TARGET_ITEMS, 5);
+const NEWS_MAX_CANDIDATE_AGE_DAYS = parsePositiveInt(
+  process.env.NEWS_MAX_CANDIDATE_AGE_DAYS,
+  21,
+);
+const NEWS_CANDIDATES = parsePositiveInt(process.env.NEWS_CANDIDATES, 18);
+const NEWS_TARGET_ITEMS = parsePositiveInt(process.env.NEWS_TARGET_ITEMS, 6);
 const NEWS_MAX_PER_SOURCE = parsePositiveInt(
   process.env.NEWS_MAX_PER_SOURCE,
-  3,
+  4,
 );
 const NEWS_MAX_PER_TOPIC = parsePositiveInt(
   process.env.NEWS_MAX_PER_TOPIC,
-  2,
+  3,
 );
 const DELETE_NEWS_OLDER_THAN_DAYS = parseNonNegativeInt(
   process.env.DELETE_NEWS_OLDER_THAN_DAYS,
@@ -173,15 +177,197 @@ const sensitiveKeywords = [
   "罹難",
 ];
 
+const hardBlockedKeywords = [
+  "血腥",
+  "分屍",
+  "碎屍",
+  "虐童",
+  "性侵",
+  "猥褻",
+  "偷拍",
+  "八卦",
+];
+
+const spaceKeywords = [
+  "太空",
+  "火箭",
+  "衛星",
+  "SpaceX",
+  "NASA",
+  "Artemis",
+  "JPL",
+  "Starship",
+  "登月",
+  "軌道",
+  "發射",
+];
+
+const educationAchievementKeywords = [
+  "物理奧林匹亞",
+  "數學奧林匹亞",
+  "化學奧林匹亞",
+  "生物奧林匹亞",
+  "奧林匹亞",
+  "科學班",
+  "實驗高中",
+  "科展",
+  "STEM",
+  "資優",
+];
+
+const policyKeywords = [
+  "政策",
+  "補助",
+  "教育部",
+  "國教署",
+  "國科會",
+  "台北市政府",
+  "數位學習",
+  "AI工具",
+  "AI 工具",
+  "校園",
+];
+
+const economyKeywords = [
+  "經濟",
+  "出口",
+  "關稅",
+  "供應鏈",
+  "景氣",
+  "GDP",
+  "就業",
+  "失業",
+  "油價",
+  "電價",
+  "通膨",
+  "薪資",
+];
+
+const conflictKeywords = [
+  "戰爭",
+  "衝突",
+  "停火",
+  "中東",
+  "伊朗",
+  "以色列",
+  "烏克蘭",
+  "俄羅斯",
+  "軍費",
+  "難民",
+];
+
+const futureOfWorkKeywords = [
+  "職缺",
+  "徵才",
+  "裁員",
+  "工程師",
+  "實習",
+  "資料中心",
+  "AI代理",
+  "AI 代理",
+  "機器人",
+  "半導體",
+  "台積電",
+  "輝達",
+  "NVIDIA",
+  "OpenAI",
+  "微軟",
+  "蘋果",
+  "供應鏈",
+];
+
+const officialHighValueKeywords = [
+  "物理奧林匹亞",
+  "數學奧林匹亞",
+  "化學奧林匹亞",
+  "生物奧林匹亞",
+  "奧林匹亞",
+  "科學班",
+  "實驗高中",
+  "科展",
+  "STEM",
+  "資優",
+  "火箭賽",
+  "太空人才",
+  "科學教育",
+  "教育政策",
+  "數位學習",
+  "AI工具",
+  "AI 工具",
+  "校園",
+  "職涯",
+  "徵才",
+  "就業",
+  "半導體",
+  "機器人",
+  "公共衛生",
+  "食安",
+];
+
+const lowSignalOfficialKeywords = [
+  "表揚",
+  "模範公務人員",
+  "預備會議",
+  "頒獎典禮",
+  "學術研究獎項",
+  "數位示範體驗場域",
+  "布達",
+  "交接典禮",
+  "致詞",
+  "蒞臨",
+  "揭牌",
+  "開幕",
+  "交流",
+  "參訪",
+  "說明會",
+  "論壇",
+  "記者會",
+  "成果展",
+  "研習",
+  "宣導",
+];
+
+const priorityTopicOrder = [
+  "education",
+  "career",
+  "ai-robotics",
+  "big-tech",
+  "industry",
+  "space",
+  "science",
+  "public-health",
+  "economy",
+  "global-conflict",
+  "weather",
+  "general",
+];
+
 const rssFeeds = [
-  directRssFeed("科技新報", "https://technews.tw/feed/"),
+  directRssFeed("TechNews 科技新報", "https://technews.tw/tn-rss/"),
   directRssFeed("PanSci 泛科學", "https://pansci.asia/feed"),
-  googleNewsSearchFeed("科學 OR 物理 OR 天文 OR 太空 OR 氣象 OR 地震"),
-  googleNewsSearchFeed("科技 OR AI OR 人工智慧 OR 半導體 OR 機器人 OR 能源"),
-  googleNewsSearchFeed("台灣 學生 OR 大學 OR 高中 OR 科學班 OR 奧林匹亞 OR 教育"),
-  googleNewsSearchFeed("台灣 裁員 OR 職缺 OR 工程師 OR 科技業 OR 台積電 OR 蘋果 OR 微軟"),
+  directRssFeed("教育部即時新聞", "https://www.moe.gov.tw/Rss_News.aspx?n=9E7AC85F1954DDA8"),
+  directRssFeed("國科會新聞資料", "https://www.nstc.gov.tw/nstc/rss/newsdata"),
+  directRssFeed("CNA 科技", "https://feeds.feedburner.com/rsscna/technology"),
+  directRssFeed("CNA 生活", "https://feeds.feedburner.com/rsscna/lifehealth"),
+  directRssFeed("CNA 國際", "https://feeds.feedburner.com/rsscna/intworld"),
+  directRssFeed("NASA Technology", "https://www.nasa.gov/technology/feed/"),
+  directRssFeed("NASA Artemis", "https://www.nasa.gov/missions/artemis/feed/"),
+  directRssFeed("NASA JPL", "https://www.nasa.gov/centers-and-facilities/jpl/feed/"),
+  directRssFeed("Space.com", "https://www.space.com/feeds.xml"),
+  googleNewsSearchFeed("台灣 科學 OR 物理 OR 地震 OR 太空 OR 氣候 OR 醫學"),
+  googleNewsSearchFeed("台灣 科技 OR AI OR 機器人 OR 半導體 OR 台積電 OR 輝達 OR 微軟 OR 蘋果"),
+  googleNewsSearchFeed("台灣 教育 OR 學生 OR 大學 OR 高中 OR 校園 OR 志願 OR 科系"),
+  googleNewsSearchFeed("台灣 科技業 OR 裁員 OR 徵才 OR 職缺 OR 工程師 OR 職涯", 7),
+  googleNewsSearchFeed("台灣 物理奧林匹亞 OR 金牌 OR 科學班 OR 實驗高中 OR 科展 OR STEM", 14),
+  googleNewsSearchFeed("台灣 物理奧林匹亞 OR 5面金牌 OR 國際物理奧林匹亞", 30),
+  googleNewsSearchFeed("台灣 科學班 OR 實驗高中 科學班 OR 資優班", 30),
+  googleNewsSearchFeed("台灣 教育政策 OR 校園 OR AI工具 OR 數位學習 OR 科學教育 OR 資優", 10),
+  googleNewsSearchFeed("台灣 經濟 OR GDP OR 出口 OR 供應鏈 OR 關稅 OR 能源 OR 就業"),
   googleNewsSearchFeed("台灣 COVID OR 疫情 OR 食安 OR 毒油 OR 公共衛生"),
-  googleNewsSearchFeed("台灣 天氣 OR 自然 OR 環境 OR 生活"),
+  googleNewsSearchFeed("台灣 天氣 OR 氣象 OR 颱風 OR 雷雨 OR 極端高溫"),
+  googleNewsSearchFeed("SpaceX OR Starship OR rocket landing OR Indian Ocean OR NASA OR Artemis OR satellite", 7),
+  googleNewsSearchFeed("global AI layoffs OR hiring OR semiconductor jobs OR robotics breakthrough", 7),
+  googleNewsSearchFeed("國際 戰爭 OR 油價 OR 中東 OR 伊朗 OR 以色列 OR 供應鏈", 7),
 ];
 
 main().catch((error) => {
@@ -261,8 +447,10 @@ async function main() {
 }
 
 async function prepareClassroomItems(candidates) {
+  const enrichedCandidates = await enrichCandidatesForModel(candidates);
+
   try {
-    const items = await summarizeForClassroom(candidates);
+    const items = await summarizeForClassroom(enrichedCandidates);
     if (items.length > 0) return items;
 
     console.warn(
@@ -276,7 +464,7 @@ async function prepareClassroomItems(candidates) {
     );
   }
 
-  return buildRuleBasedClassroomItems(candidates);
+  return buildRuleBasedClassroomItems(enrichedCandidates);
 }
 
 async function getNewsCandidates() {
@@ -296,14 +484,24 @@ async function getNewsCandidates() {
     }
   }
 
-  return selectDiverseCandidates(
-    [...byTitle.values()]
-      .filter((item) => !isHardBlockedCandidate(item))
-      .sort(
-      (a, b) => b.score - a.score || b.publishedTime - a.publishedTime,
-      ),
+  const rankedItems = [...byTitle.values()]
+    .filter((item) => !isHardBlockedCandidate(item))
+    .sort((a, b) => b.score - a.score || b.publishedTime - a.publishedTime);
+  const classroomFirstPool = rankedItems.filter(
+    (item) => !isLowSignalCandidate(item),
+  );
+  const preferred = selectDiverseCandidates(
+    classroomFirstPool,
     NEWS_CANDIDATES,
-  )
+  );
+  const fallback = selectDiverseCandidates(
+    rankedItems.filter(
+      (item) => !preferred.some((picked) => picked.source_url === item.source_url),
+    ),
+    Math.max(0, NEWS_CANDIDATES - preferred.length),
+  );
+
+  return [...preferred, ...fallback]
     .slice(0, NEWS_CANDIDATES)
     .map((item, index) => ({
       article_index: index + 1,
@@ -321,17 +519,32 @@ function selectDiverseCandidates(items, limit) {
   const sourceCounts = new Map();
   const topicCounts = new Map();
 
+  for (const topicKey of priorityTopicOrder) {
+    const topicCandidate = items.find(
+      (item) =>
+        !selectedUrls.has(item.source_url) &&
+        candidateTopicKey(item) === topicKey &&
+        canSelectCandidate(item, sourceCounts, topicCounts),
+    );
+
+    if (!topicCandidate) continue;
+
+    addSelectedCandidate(
+      topicCandidate,
+      selected,
+      selectedUrls,
+      sourceCounts,
+      topicCounts,
+    );
+
+    if (selected.length >= limit) return selected;
+  }
+
   for (const item of items) {
-    const sourceKey = normalizeSourceKey(item.source);
-    const topicKey = candidateTopicKey(item);
+    if (selectedUrls.has(item.source_url)) continue;
+    if (!canSelectCandidate(item, sourceCounts, topicCounts)) continue;
 
-    if ((sourceCounts.get(sourceKey) ?? 0) >= NEWS_MAX_PER_SOURCE) continue;
-    if ((topicCounts.get(topicKey) ?? 0) >= NEWS_MAX_PER_TOPIC) continue;
-
-    selected.push(item);
-    selectedUrls.add(item.source_url);
-    sourceCounts.set(sourceKey, (sourceCounts.get(sourceKey) ?? 0) + 1);
-    topicCounts.set(topicKey, (topicCounts.get(topicKey) ?? 0) + 1);
+    addSelectedCandidate(item, selected, selectedUrls, sourceCounts, topicCounts);
 
     if (selected.length >= limit) return selected;
   }
@@ -345,6 +558,132 @@ function selectDiverseCandidates(items, limit) {
   }
 
   return selected;
+}
+
+function canSelectCandidate(item, sourceCounts, topicCounts) {
+  const sourceKey = normalizeSourceKey(item.source);
+  const topicKey = candidateTopicKey(item);
+
+  return (
+    (sourceCounts.get(sourceKey) ?? 0) < NEWS_MAX_PER_SOURCE &&
+    (topicCounts.get(topicKey) ?? 0) < NEWS_MAX_PER_TOPIC
+  );
+}
+
+function addSelectedCandidate(
+  item,
+  selected,
+  selectedUrls,
+  sourceCounts,
+  topicCounts,
+) {
+  const sourceKey = normalizeSourceKey(item.source);
+  const topicKey = candidateTopicKey(item);
+
+  selected.push(item);
+  selectedUrls.add(item.source_url);
+  sourceCounts.set(sourceKey, (sourceCounts.get(sourceKey) ?? 0) + 1);
+  topicCounts.set(topicKey, (topicCounts.get(topicKey) ?? 0) + 1);
+}
+
+async function enrichCandidatesForModel(candidates) {
+  return Promise.all(candidates.map(enrichCandidateForModel));
+}
+
+async function enrichCandidateForModel(candidate) {
+  const articleContext = await fetchArticleContext(candidate.source_url);
+  return {
+    ...candidate,
+    article_context: articleContext.excerpt,
+    resolved_source_url: articleContext.resolvedUrl,
+  };
+}
+
+async function fetchArticleContext(url) {
+  const normalizedUrl = normalizeUrl(url);
+  if (!normalizedUrl) {
+    return { excerpt: "", resolvedUrl: "" };
+  }
+
+  try {
+    const response = await fetch(normalizedUrl, {
+      headers: {
+        "user-agent":
+          "teaching-hub-news-bot/1.0 (+https://github.com/chianghunghsuan/teaching-hub)",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      return { excerpt: "", resolvedUrl: response.url ?? normalizedUrl };
+    }
+
+    const html = await response.text();
+    const excerpt = extractArticleExcerpt(html);
+
+    return {
+      excerpt,
+      resolvedUrl: normalizeUrl(response.url) || normalizedUrl,
+    };
+  } catch {
+    return { excerpt: "", resolvedUrl: normalizedUrl };
+  }
+}
+
+function extractArticleExcerpt(html) {
+  const cleanHtml = String(html ?? "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ");
+  const title = extractHtmlTitle(cleanHtml);
+  const description =
+    extractMetaContent(cleanHtml, "description") ||
+    extractMetaContent(cleanHtml, "og:description") ||
+    extractMetaContent(cleanHtml, "twitter:description");
+  const articleHtml =
+    extractElementHtml(cleanHtml, "article") ||
+    extractElementHtml(cleanHtml, "main") ||
+    extractElementHtml(cleanHtml, "body");
+  const bodyText = stripHtml(articleHtml).slice(0, 2200);
+
+  return [title, description, bodyText]
+    .filter(Boolean)
+    .join("\n")
+    .trim()
+    .slice(0, 2600);
+}
+
+function extractHtmlTitle(html) {
+  const match = String(html ?? "").match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return stripHtml(match?.[1] ?? "");
+}
+
+function extractMetaContent(html, name) {
+  const escapedName = escapeRegExp(name);
+  const patterns = [
+    new RegExp(
+      `<meta[^>]+(?:name|property)=["']${escapedName}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`,
+      "i",
+    ),
+    new RegExp(
+      `<meta[^>]+content=["']([\\s\\S]*?)["'][^>]+(?:name|property)=["']${escapedName}["'][^>]*>`,
+      "i",
+    ),
+  ];
+
+  for (const pattern of patterns) {
+    const match = String(html ?? "").match(pattern);
+    if (match?.[1]) return stripHtml(match[1]);
+  }
+
+  return "";
+}
+
+function extractElementHtml(html, tagName) {
+  const match = String(html ?? "").match(
+    new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "i"),
+  );
+  return match?.[1] ?? "";
 }
 
 async function fetchRssFeed(feed) {
@@ -422,11 +761,46 @@ function normalizeRssItem(item, feedLabel) {
   const studentScore = countKeywordHits(haystack, studentKeywords) * 14;
   const industryScore = countKeywordHits(haystack, industryKeywords) * 12;
   const publicLifeScore = countKeywordHits(haystack, publicLifeKeywords) * 11;
-  const sensitiveScore = countKeywordHits(haystack, sensitiveKeywords) * -25;
-  const sourcePenalty = isFinanceHeavySource({ source, source_url: sourceUrl })
+  const spaceScore = countKeywordHits(haystack, spaceKeywords) * 15;
+  const educationAchievementScore =
+    countKeywordHits(haystack, educationAchievementKeywords) * 16;
+  const policyScore = countKeywordHits(haystack, policyKeywords) * 10;
+  const economyScore = countKeywordHits(haystack, economyKeywords) * 10;
+  const conflictScore = countKeywordHits(haystack, conflictKeywords) * 9;
+  const futureOfWorkScore = countKeywordHits(haystack, futureOfWorkKeywords) * 13;
+  const figureScore =
+    extractInterestingFigures({ title, summary, source, source_url: sourceUrl })
+      .length * 7;
+  const sensitiveScore = countKeywordHits(haystack, hardBlockedKeywords) * -35;
+  const sourcePenalty = isPureMarketNews({ source, source_url: sourceUrl, title, summary })
     ? -80
     : 0;
+  const weakSourcePenalty = isWeakAggregator({
+    source,
+    source_url: sourceUrl,
+    title,
+    summary,
+  })
+    ? -26
+    : 0;
+  const officialCeremonyPenalty = isLowSignalOfficialItem({
+    source,
+    source_url: sourceUrl,
+    title,
+    summary,
+  })
+    ? -60
+    : 0;
+  const sourceQualityBonus = sourceQualityScore({
+    source,
+    source_url: sourceUrl,
+    title,
+    summary,
+  });
   const hoursOld = publishedTime ? (Date.now() - publishedTime) / 36e5 : 999;
+  if (publishedTime && hoursOld > NEWS_MAX_CANDIDATE_AGE_DAYS * 24) {
+    return null;
+  }
   const recencyScore = publishedTime ? Math.max(-48, 48 - Math.round(hoursOld)) : -100;
 
   return {
@@ -441,24 +815,41 @@ function normalizeRssItem(item, feedLabel) {
       studentScore +
       industryScore +
       publicLifeScore +
+      spaceScore +
+      educationAchievementScore +
+      policyScore +
+      economyScore +
+      conflictScore +
+      futureOfWorkScore +
+      figureScore +
       sensitiveScore +
       sourcePenalty +
+      weakSourcePenalty +
+      officialCeremonyPenalty +
+      sourceQualityBonus +
       recencyScore,
   };
 }
 
 async function summarizeForClassroom(candidates) {
   const prompt = [
-    "你是台灣補習班物理老師的課堂時事助理。",
-    "請從候選新聞中挑出 3 到 5 則最適合國高中學生課堂分享的內容。",
-    "優先選擇和學生、升學、科系探索、職涯方向、日常生活、公共健康、食安、科學、科技、AI、機器人、半導體、能源、天氣、自然現象相關的題材。",
-    "如果是科技產業新聞，優先挑對學生理解未來工作、技能需求、公司策略轉變、產業趨勢有幫助的內容，例如裁員、徵才、職缺暴增、AI 發展、機器人能力提升、大公司的重大產品或政策改變。",
-    "如果是公共政策新聞，只保留與學生、教育、校園、AI 工具、公共生活直接相關的具體政策，不要政黨攻防、政治口水或選戰內容。",
-    "如果是公共事件或健康議題，優先選有事實、數據、研究、制度改變或生活影響的內容，例如 COVID-19、食安、公共衛生、能源、災害防救。",
-    "過濾血腥暴力、八卦、犯罪細節、未證實傳聞、純投資炒股、純股價漲跌或不適合課堂討論的內容。",
-    "每則 content 請用繁體中文，並固定使用三行格式：",
+    "你是台灣補習班物理老師的課堂時事編輯，不是一般新聞摘要機器。",
+    "請從候選新聞中挑出 4 到 6 則最適合國高中到大學生課堂分享的內容。",
+    "優先選擇和學生、升學、科系探索、職涯方向、日常生活、公共健康、食安、科學、科技、AI、機器人、半導體、能源、天氣、自然現象、太空、國際局勢相關的題材。",
+    "如果是科技產業新聞，優先挑對學生理解未來工作、技能需求、公司策略轉變、產業趨勢有幫助的內容，例如裁員、徵才、職缺變化、AI 發展、機器人能力提升、大公司的重大產品或政策改變。",
+    "如果是教育新聞，不要只寫得獎或活動，要補出培訓路徑、制度背景、學習價值，以及學生可以怎麼理解這件事的重要性。",
+    "如果是公共政策或台灣經濟新聞，可以選，但必須整理出具體制度、數字或影響，不要只寫官話或空泛口號。",
+    "如果是戰爭、軍事、國際衝突或油價供應鏈議題，可以選，但不能只講立場或口水，必須回到事件本身、關鍵數字、對人與生活的影響，以及對台灣或未來工作的意義。",
+    "如果來源只是部會活動、表揚、致詞、蒞臨、開幕、參訪或例行公告，除非它明確涉及科學教育制度、人才培育、職涯機會、重大技術政策或實際數據，否則不要選。",
+    "請盡量涵蓋不同面向：學生與教育至少 1 則、科技產業或職涯至少 1 則、科學或太空至少 1 則，剩餘再從國際、公共健康、經濟、政策中挑最有資訊量的內容。",
+    "你會收到每則新聞的 title、summary、source，部分還有 article_context。數字、金額、比例、名次、時間點，只能使用候選資料或 article_context 裡明確出現的資訊，不能自己猜。",
+    "如果來源沒有提供可直接採信的具體數字，就在『關鍵數字』寫：來源未提供可直接採信的具體數字。",
+    "過濾血腥、八卦、未證實傳聞、犯罪細節、純股價漲跌、純投資炒作或不適合課堂討論的內容。",
+    "每則 content 請用繁體中文，並固定使用五行格式：",
     "摘要：1 句，濃縮新聞重點，能直接給學生看。",
-    "課堂解釋：2 到 4 句，用國高中學生聽得懂的方式解釋背景、科學、科技、產業或公共生活概念，盡量連到物理、自然、職涯或生活觀察。",
+    "背景：2 到 4 句，用國高中學生聽得懂的方式解釋背景、制度、科學、科技、產業或公共生活概念。",
+    "關鍵數字：整理 1 到 3 個具體數字、名次、金額、比例、時間點或規模。",
+    "影響：2 到 3 句，說明它對學生、一般人生活、台灣、產業或未來工作的意義。",
     "延伸討論：1 個能引導學生思考的問題。",
     "tag 只能是：科學、科技、天氣、國際、社會。",
     "article_index 必須使用候選新聞中的編號，不要自創來源。",
@@ -583,8 +974,9 @@ function buildRuleBasedClassroomItems(candidates) {
   const selected = candidates
     .filter(
       (candidate) =>
-        !hasKeyword(candidate, sensitiveKeywords) &&
-        !isFinanceHeavySource(candidate),
+        !isHardBlockedCandidate(candidate) &&
+        !isPureMarketNews(candidate) &&
+        !isLowSignalOfficialItem(candidate),
     )
     .filter((candidate, index, items) => {
       const topicKey = candidateTopicKey(candidate);
@@ -608,6 +1000,9 @@ function buildRuleBasedClassroomItems(candidates) {
 }
 
 function inferTag(candidate) {
+  if (hasKeyword(candidate, ["戰爭", "衝突", "停火", "油價", "中東", "伊朗", "以色列", "烏克蘭", "俄羅斯", "關稅", "供應鏈", "GDP", "經濟"])) {
+    return "國際";
+  }
   if (
     hasKeyword(candidate, [
       "COVID",
@@ -673,10 +1068,14 @@ function buildRuleBasedContent(candidate, tag) {
   const title = cleanTitleForClassroom(candidate.title);
   const question = discussionQuestionFor(tag, candidate);
   const explanation = explanationForCandidate(candidate, tag);
+  const keyFigures = keyFiguresForCandidate(candidate);
+  const impact = impactForCandidate(candidate, tag);
 
   return [
     `摘要：今天可用「${title}」帶學生連結生活中的${topicLabelFor(tag)}議題。`,
-    `課堂解釋：${explanation}`,
+    `背景：${explanation}`,
+    `關鍵數字：${keyFigures}`,
+    `影響：${impact}`,
     `延伸討論：${question}`,
   ].join("\n");
 }
@@ -685,12 +1084,21 @@ function isStructuredNewsContent(content) {
   const text = String(content ?? "");
   return (
     /(^|\n)摘要[:：]/u.test(text) &&
-    /(^|\n)課堂解釋[:：]/u.test(text) &&
+    /(^|\n)(課堂解釋|背景|影響)[:：]/u.test(text) &&
     /(^|\n)延伸討論[:：]/u.test(text)
   );
 }
 
 function discussionQuestionFor(tag, candidate) {
+  if (hasKeyword(candidate, ["戰爭", "衝突", "停火", "油價", "中東", "伊朗", "以色列", "烏克蘭", "俄羅斯"])) {
+    return "如果把這則國際事件拆成『軍事、能源、經濟、民生』四個面向，哪一個面向對台灣最有感？";
+  }
+  if (hasKeyword(candidate, ["經濟", "GDP", "出口", "景氣", "就業", "失業", "供應鏈", "關稅"])) {
+    return "從這些數字來看，這波經濟變化最可能先影響哪些產業、科系或工作？";
+  }
+  if (hasKeyword(candidate, ["SpaceX", "NASA", "太空", "火箭", "衛星", "登月"])) {
+    return "如果太空產業持續擴張，未來最需要哪些跨領域能力，會不會改變學生對理工科的想像？";
+  }
   if (hasKeyword(candidate, ["裁員", "徵才", "職缺", "工程師", "科系", "職涯"])) {
     return "從這則產業消息來看，未來哪些能力、工具或科系可能更有需求？";
   }
@@ -718,6 +1126,15 @@ function discussionQuestionFor(tag, candidate) {
 }
 
 function explanationForCandidate(candidate, tag) {
+  if (hasKeyword(candidate, ["戰爭", "衝突", "停火", "油價", "中東", "伊朗", "以色列", "烏克蘭", "俄羅斯"])) {
+    return "國際衝突新聞不只是在看誰和誰打起來，更重要的是去拆解它如何影響油價、航運、供應鏈、國防支出與一般人的生活成本。帶學生看這類題材時，可以把地緣政治轉成具體的能源、經濟與民生問題，讓討論不只停留在情緒或立場。";
+  }
+  if (hasKeyword(candidate, ["經濟", "GDP", "出口", "景氣", "就業", "失業", "供應鏈", "關稅"])) {
+    return "這類新聞適合讓學生知道經濟指標不是大人世界的專有名詞，而是會慢慢反映在企業投資、徵才、薪資、科系熱門度與產業方向上。課堂上可以帶學生分辨『景氣現象』和『個人選擇』之間到底是怎麼連動的。";
+  }
+  if (hasKeyword(candidate, ["SpaceX", "NASA", "太空", "火箭", "衛星", "登月"])) {
+    return "太空題材很適合把物理、工程、材料、控制和國際競爭放在同一個真實案例裡。學生不只會看到火箭很酷，還能進一步理解推進、回收、成本控制與任務目標之間是如何互相牽動的。";
+  }
   if (hasKeyword(candidate, ["裁員", "徵才", "職缺", "工程師", "科系", "職涯"])) {
     return "這類新聞不只是公司消息，也能拿來談產業景氣、技能需求和工作型態怎麼改變。帶學生看這則新聞時，可以從企業為什麼縮編或擴編、哪些能力被放大、哪些工具開始成為基本配備切入，幫他們把新聞和未來選系、選課、培養能力連起來。";
   }
@@ -737,6 +1154,40 @@ function explanationForCandidate(candidate, tag) {
     return "可以先讓學生觀察新聞中的現象，再追問背後需要哪些資料、測量或模型來判斷。這則新聞適合用來練習把生活事件轉成可討論的科學問題，也能提醒學生不要只看標題就下結論。";
   }
   return "可以先讓學生觀察新聞標題中的現象或技術，再追問背後需要哪些資料、測量或模型來判斷。這則新聞適合用來練習把生活事件轉成可討論的科學問題，也能提醒學生不要只看標題就下結論。";
+}
+
+function keyFiguresForCandidate(candidate) {
+  const figures = extractInterestingFigures(candidate);
+  if (!figures.length) {
+    return "來源未提供可直接採信的具體數字。";
+  }
+
+  return figures.join("；");
+}
+
+function impactForCandidate(candidate, tag) {
+  if (hasKeyword(candidate, ["物理奧林匹亞", "數學奧林匹亞", "化學奧林匹亞", "生物奧林匹亞", "科學班", "實驗高中"])) {
+    return "這類題材可以讓學生看到高階科學學習不是抽象口號，而是有明確訓練路徑、資源差異和長期投入的結果，也會直接影響升學想像與自我定位。";
+  }
+  if (hasKeyword(candidate, ["戰爭", "衝突", "油價", "供應鏈", "關稅", "中東"])) {
+    return "國際衝突不只影響前線，也會透過油價、運輸、供應鏈、物價與產業投資回到一般人的生活。對學生來說，這類新聞能幫助理解全球事件如何連動到台灣的工作機會與經濟環境。";
+  }
+  if (hasKeyword(candidate, ["經濟", "GDP", "出口", "景氣", "就業", "失業"])) {
+    return "這類新聞適合帶學生理解宏觀經濟不是離自己很遠的東西，它會影響企業徵才、產業薪資、科系熱度與未來工作的穩定度。";
+  }
+  if (hasKeyword(candidate, ["SpaceX", "NASA", "太空", "火箭", "衛星"])) {
+    return "太空新聞很適合把抽象的物理、工程和國際競爭變成具體案例，也能讓學生看到未來新產業如何由材料、控制、機械、軟體和通訊一起推動。";
+  }
+  if (hasKeyword(candidate, ["政策", "補助", "教育部", "國教署", "國科會", "校園"])) {
+    return "政策與制度變化通常會慢慢影響學生每天真正會遇到的學習工具、資源配置、考試與升學路徑。看懂制度，比只看事件更有長期價值。";
+  }
+  if (tag === "科技") {
+    return "這則新聞適合拿來連結未來工作、技能需求與產業變化，讓學生理解技術進展不是只有新奇，而是會改變企業決策與社會分工。";
+  }
+  if (tag === "國際") {
+    return "這則新聞適合拿來練習把國際事件拆成事實、數據與後續影響，避免只記住情緒化標題。";
+  }
+  return "這則新聞的價值不只在事件本身，也在於它能幫學生把日常觀察連到更大的制度、科學或社會脈絡。";
 }
 
 function topicLabelFor(tag) {
@@ -760,11 +1211,45 @@ function cleanTitleForClassroom(title) {
 }
 
 function candidateText(candidate) {
-  return `${candidate.title ?? ""} ${candidate.summary ?? ""} ${candidate.source ?? ""} ${candidate.source_url ?? ""}`;
+  return [
+    candidate.title ?? "",
+    candidate.summary ?? "",
+    candidate.source ?? "",
+    candidate.source_url ?? "",
+    candidate.resolved_source_url ?? "",
+    candidate.article_context ?? "",
+  ]
+    .join(" ")
+    .trim();
+}
+
+function candidateTitleText(candidate) {
+  return [candidate.title ?? "", candidate.source ?? ""].join(" ").trim();
+}
+
+function extractInterestingFigures(candidate) {
+  const text = candidateText(candidate);
+  const matches = text.match(
+    /\b\d+(?:\.\d+)?\s?(?:%|％|億元|兆元|億|萬人|萬|千|美元|美金|元|年|月|日|小時|分鐘|公里|公尺|MW|GW|℃|度|人|名|家|場|次|面|顆|兆)\b/g,
+  );
+
+  return [...new Set(matches ?? [])].slice(0, 3);
+}
+
+function escapeRegExp(value) {
+  return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeSourceKey(source) {
   return String(source ?? "").trim().toLowerCase() || "unknown";
+}
+
+function readHostname(url) {
+  try {
+    return new URL(String(url ?? "")).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
 }
 
 function candidateTopicKey(candidate) {
@@ -809,6 +1294,27 @@ function candidateTopicKey(candidate) {
   }
   if (
     hasKeyword(candidate, [
+      "SpaceX",
+      "NASA",
+      "JPL",
+      "太空",
+      "火箭",
+      "衛星",
+      "登月",
+      "Starship",
+      "Artemis",
+    ])
+  ) {
+    return "space";
+  }
+  if (hasKeyword(candidate, ["戰爭", "衝突", "停火", "油價", "中東", "伊朗", "以色列", "烏克蘭", "俄羅斯"])) {
+    return "global-conflict";
+  }
+  if (hasKeyword(candidate, ["經濟", "GDP", "出口", "供應鏈", "關稅", "景氣", "就業", "失業"])) {
+    return "economy";
+  }
+  if (
+    hasKeyword(candidate, [
       "蘋果",
       "Apple",
       "微軟",
@@ -844,7 +1350,7 @@ function candidateTopicKey(candidate) {
   return "general";
 }
 
-function isFinanceHeavySource(candidate) {
+function isPureMarketNews(candidate) {
   const text = candidateText(candidate);
   return (
     /finance\./i.test(text) ||
@@ -852,16 +1358,67 @@ function isFinanceHeavySource(candidate) {
     /moneydj/i.test(text) ||
     /yahoo.*股市/i.test(text) ||
     /udn.*股市/i.test(text) ||
-    /(鉅亨|股市|財經)/.test(text)
+    /(鉅亨|股市|財經|ETF|個股|大盤|籌碼)/.test(text)
   );
 }
 
+function isWeakAggregator(candidate) {
+  const text = candidateText(candidate);
+  return /(forecastock|cmoney|moneydj|wantgoo|minkabu|anue|cnyes)/i.test(text);
+}
+
+function isOfficialSource(candidate) {
+  const text = candidateText(candidate);
+  return /(gov\.tw|教育部|國科會|國教署|台北市政府)/i.test(text);
+}
+
+function isLowSignalOfficialItem(candidate) {
+  return (
+    hasTitleKeyword(candidate, lowSignalOfficialKeywords) &&
+    !hasTitleKeyword(candidate, officialHighValueKeywords)
+  );
+}
+
+function sourceQualityScore(candidate) {
+  const host = readHostname(
+    candidate.resolved_source_url ?? candidate.source_url ?? "",
+  );
+  const sourceKey = normalizeSourceKey(candidate.source);
+
+  if (
+    /(technews\.tw|pansci\.asia|nasa\.gov|space\.com|cna\.com\.tw|focustaiwan\.tw)/i.test(
+      host,
+    )
+  ) {
+    return 20;
+  }
+  if (/(moe\.gov\.tw|nstc\.gov\.tw)/i.test(host)) {
+    return hasKeyword(candidate, officialHighValueKeywords) ? 24 : 8;
+  }
+  if (/(technews|pansci|cna|nasa|space\.com|教育部|國科會)/i.test(sourceKey)) {
+    return 14;
+  }
+  if (isWeakAggregator(candidate)) {
+    return -12;
+  }
+  return 0;
+}
+
 function isHardBlockedCandidate(candidate) {
-  return hasKeyword(candidate, sensitiveKeywords);
+  return hasKeyword(candidate, hardBlockedKeywords);
+}
+
+function isLowSignalCandidate(candidate) {
+  return isPureMarketNews(candidate) || isLowSignalOfficialItem(candidate);
 }
 
 function hasKeyword(candidate, keywords) {
   const haystack = candidateText(candidate);
+  return keywords.some((keyword) => haystack.includes(keyword));
+}
+
+function hasTitleKeyword(candidate, keywords) {
+  const haystack = candidateTitleText(candidate);
   return keywords.some((keyword) => haystack.includes(keyword));
 }
 
@@ -961,9 +1518,9 @@ async function supabaseText(url, options, action) {
   return text;
 }
 
-function googleNewsSearchFeed(query) {
+function googleNewsSearchFeed(query, lookbackDays = NEWS_LOOKBACK_DAYS) {
   const url = new URL("https://news.google.com/rss/search");
-  url.searchParams.set("q", `${query} when:${NEWS_LOOKBACK_DAYS}d`);
+  url.searchParams.set("q", `${query} when:${lookbackDays}d`);
   url.searchParams.set("hl", "zh-TW");
   url.searchParams.set("gl", "TW");
   url.searchParams.set("ceid", "TW:zh-Hant");
@@ -1073,3 +1630,4 @@ function toArray(value) {
   if (value == null) return [];
   return Array.isArray(value) ? value : [value];
 }
+

@@ -147,6 +147,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .note-card .nmeta-main{display:flex;gap:8px;align-items:center;min-width:0}
 .note-card .ntag{background:color-mix(in srgb,var(--accent) 14%,var(--surface));color:var(--accent);border-radius:5px;padding:1px 8px}
 .note-card .ntx{font-size:.9rem;line-height:1.55;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.note-card .nsource{margin-top:8px;font-size:.75rem;color:var(--ink-faint);font-weight:700}
 .note-card .nmore{font-size:.72rem;color:var(--accent);font-weight:800;white-space:nowrap}
 .news-detail{display:grid;gap:13px}
 .news-detail .detail-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;color:var(--ink-faint);font-size:.78rem;font-weight:700}
@@ -452,10 +453,12 @@ function renderNotes(){
   if(!rows.length){ el.innerHTML=`<div class="empty">還沒有時事筆記。</div>`; return; }
   rows.forEach(n=>{
     const detail=parseNewsContent(n.content);
+    const sourceUrl=safeHttpUrl(n.source_url);
+    const sourceHost=sourceUrl?hostLabel(sourceUrl):"";
     const card=document.createElement("button");
     card.type="button";
     card.className="note-card";
-    card.innerHTML=`<div class="nmeta"><span class="nmeta-main"><span class="ntag">${esc(n.tag||"分享")}</span>${esc(fmtDate(n.date))}</span><span class="nmore">詳解與原文</span></div><div class="ntx">${esc(detail.summary||n.content||"")}</div>`;
+    card.innerHTML=`<div class="nmeta"><span class="nmeta-main"><span class="ntag">${esc(n.tag||"分享")}</span>${esc(fmtDate(n.date))}</span><span class="nmore">詳解與原文</span></div><div class="ntx">${esc(detail.summary||n.content||"")}</div>${sourceHost?`<div class="nsource">${esc(sourceHost)}</div>`:""}`;
     card.onclick=()=>openNewsDetail(n);
     el.appendChild(card);
   });
@@ -464,13 +467,12 @@ function renderNotes(){
 function openNewsDetail(n){
   const detail=parseNewsContent(n.content);
   const url=safeHttpUrl(n.source_url);
-  const title=detail.title||"時事詳解";
+  const title=detail.title||"新聞詳細資料";
   const source=url?`<a class="source-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">開啟文章連結</a><div class="source-host">${esc(hostLabel(url))}</div>`:`<div class="source-host">沒有文章連結</div>`;
+  const sections=detail.sections.map(sec=>`<div class="news-section"><h4>${esc(sec.label)}</h4><p>${esc(sec.content)}</p></div>`).join("");
   openSheet(esc(title), `<div class="news-detail">
-    <div class="detail-meta"><span class="detail-tag">${esc(n.tag||"分享")}</span><span>${esc(fmtDate(n.date))}</span></div>
-    <div class="news-section"><h4>摘要</h4><p>${esc(detail.summary)}</p></div>
-    <div class="news-section"><h4>課堂解釋</h4><p>${esc(detail.explanation)}</p></div>
-    ${detail.question?`<div class="news-section"><h4>延伸討論</h4><p>${esc(detail.question)}</p></div>`:""}
+    <div class="detail-meta"><span class="detail-tag">${esc(n.tag||"未分類")}</span><span>${esc(fmtDate(n.date))}</span></div>
+    ${sections}
     ${source}
   </div>`);
 }
@@ -478,30 +480,26 @@ function openNewsDetail(n){
 function parseNewsContent(raw){
   const text=String(raw||"").replace(/\r\n/g,"\n").trim();
   const lines=text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
-  const parts={};
+  const sections=[];
   lines.forEach(line=>{
-    const m=line.match(/^(摘要|重點|課堂解釋|解釋|延伸討論|討論問題)[:：]\s*(.+)$/u);
-    if(m)parts[m[1]]=m[2].trim();
+    const m=line.match(/^([^:：]{1,12})[:：]\s*(.+)$/u);
+    if(m)sections.push({label:m[1].trim(),content:m[2].trim()});
   });
-  const question=parts["延伸討論"]||parts["討論問題"]||((text.match(/(?:延伸討論|討論問題)[:：]\s*([\s\S]+)$/u)||[])[1]||"").trim();
-  let summary=parts["摘要"]||parts["重點"]||"";
-  let explanation=parts["課堂解釋"]||parts["解釋"]||"";
+  let summary=(sections.find(sec=>["摘要","重點"].includes(sec.label))||{}).content||"";
   if(!summary){
-    const beforeQ=text.split(/(?:延伸討論|討論問題)[:：]/u)[0].trim();
-    summary=firstSentence(beforeQ||text,128);
+    summary=firstSentence(text,128);
+    sections.unshift({label:"摘要",content:summary});
   }
-  if(!explanation){
-    const beforeQ=text.split(/(?:延伸討論|討論問題)[:：]/u)[0].trim();
-    explanation=beforeQ&&beforeQ!==summary?beforeQ:"這則時事可以先從新聞中的現象出發，請學生辨認它和生活、自然或科技的連結，再討論背後需要哪些資料、測量或模型才能做出可靠判斷。";
+  if(!sections.length){
+    sections.push({label:"摘要",content:summary||"這則新聞目前沒有可直接顯示的摘要。"});
+    sections.push({label:"內容",content:text||"這則新聞目前沒有更多可顯示內容。"});
   }
   return {
     title:extractNewsTitle(summary)||extractNewsTitle(text),
-    summary:summary||"這則時事可以作為課堂討論素材。",
-    explanation,
-    question,
+    summary:summary||"這則新聞目前沒有可直接顯示的摘要。",
+    sections,
   };
 }
-
 function firstSentence(text,max){
   const clean=String(text||"").replace(/\s+/g," ").trim();
   const m=clean.match(/^(.+?[。！？?])/u);
@@ -641,3 +639,4 @@ function renderAll(){ renderCalendar(); renderSalary(); renderProgress(); render
 </script>
 </body>
 </html>
+
