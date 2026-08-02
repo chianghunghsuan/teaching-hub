@@ -6,12 +6,11 @@ const SUPABASE_NEWS_URL =
 const SUPABASE_PUBLISHABLE_KEY =
   process.env.SUPABASE_PUBLISHABLE_KEY ??
   "sb_publishable_l4cGpyjxQua5ICikOiGqqw_s-_gYVnB";
-const GITHUB_MODELS_TOKEN = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
-const GITHUB_MODELS_MODEL =
-  process.env.GITHUB_MODELS_MODEL ?? "openai/gpt-4o-mini";
-const GITHUB_MODELS_URL =
-  process.env.GITHUB_MODELS_URL ??
-  "https://models.github.ai/inference/chat/completions";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+const GEMINI_URL =
+  process.env.GEMINI_URL ??
+  `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const NEWS_TIME_ZONE = process.env.NEWS_TIME_ZONE ?? "Asia/Taipei";
 const NEWS_LOOKBACK_DAYS = parsePositiveInt(process.env.NEWS_LOOKBACK_DAYS, 2);
 const NEWS_MAX_CANDIDATE_AGE_DAYS = parsePositiveInt(
@@ -377,9 +376,9 @@ main().catch((error) => {
 });
 
 async function main() {
-  if (!DRY_RUN && !GITHUB_MODELS_TOKEN) {
+  if (!DRY_RUN && !GEMINI_API_KEY) {
     throw new Error(
-      "GITHUB_TOKEN is required. GitHub Actions provides it automatically when models: read permission is enabled.",
+      "GEMINI_API_KEY is required. Add it as a GitHub Actions secret (Settings → Secrets and variables → Actions).",
     );
   }
 
@@ -454,11 +453,11 @@ async function prepareClassroomItems(candidates) {
     if (items.length > 0) return items;
 
     console.warn(
-      "GitHub Models returned no classroom-safe items. Falling back to rule-based summaries.",
+      "AI 模型未回傳可用的課堂內容，改用備援規則整理。",
     );
   } catch (error) {
     console.warn(
-      `GitHub Models unavailable. Falling back to rule-based summaries: ${
+      `AI 模型呼叫失敗，改用備援規則整理：${
         error instanceof Error ? error.message : String(error)
       }`,
     );
@@ -634,16 +633,23 @@ async function fetchArticleContext(url) {
 function extractArticleExcerpt(html) {
   const cleanHtml = String(html ?? "")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ");
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<header[\s\S]*?<\/header>/gi, " ")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+    .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
+    .replace(/<form[\s\S]*?<\/form>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ");
   const title = extractHtmlTitle(cleanHtml);
   const description =
     extractMetaContent(cleanHtml, "description") ||
     extractMetaContent(cleanHtml, "og:description") ||
     extractMetaContent(cleanHtml, "twitter:description");
+  // 只取 <article>/<main>；沒有就不硬抓 <body>，避免把整個網站選單當內文
   const articleHtml =
     extractElementHtml(cleanHtml, "article") ||
     extractElementHtml(cleanHtml, "main") ||
-    extractElementHtml(cleanHtml, "body");
+    "";
   const bodyText = stripHtml(articleHtml).slice(0, 2200);
 
   return [title, description, bodyText]
@@ -854,45 +860,36 @@ async function summarizeForClassroom(candidates) {
     '只輸出 JSON object，格式：{"items":[{"article_index":1,"tag":"科學","content":"..."}]}',
   ].join("\n");
 
-  const response = await fetch(GITHUB_MODELS_URL, {
+  const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${GITHUB_MODELS_TOKEN}`,
-      accept: "application/vnd.github+json",
-      "content-type": "application/json",
-      "x-github-api-version": "2026-03-10",
-    },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      model: GITHUB_MODELS_MODEL,
-      temperature: 0.25,
-      messages: [
-        { role: "system", content: prompt },
+      systemInstruction: { parts: [{ text: prompt }] },
+      contents: [
         {
           role: "user",
-          content: JSON.stringify(
-            {
-              today,
-              candidates,
-            },
-            null,
-            2,
-          ),
+          parts: [{ text: JSON.stringify({ today, candidates }, null, 2) }],
         },
       ],
+      generationConfig: {
+        temperature: 0.25,
+        responseMimeType: "application/json",
+        maxOutputTokens: 8192,
+      },
     }),
   });
 
   const bodyText = await response.text();
   if (!response.ok) {
-    throw new Error(
-      `GitHub Models request failed: ${response.status} ${bodyText}`,
-    );
+    throw new Error(`Gemini request failed: ${response.status} ${bodyText}`);
   }
 
   const body = JSON.parse(bodyText);
-  const content = body.choices?.[0]?.message?.content;
+  const content = body.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text ?? "")
+    .join("");
   if (!content) {
-    throw new Error("GitHub Models response did not include message content.");
+    throw new Error("Gemini response did not include content.");
   }
 
   const candidateByIndex = new Map(
