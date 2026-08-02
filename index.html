@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-title" content="江璿物理">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
-<title>教學管理台</title>
+<title>江璿物理</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -32,7 +33,7 @@ body{margin:0;font-family:var(--font);background:var(--paper);color:var(--ink);l
 .wrap{padding:clamp(14px,3vw,32px);max-width:1120px;margin:0 auto;padding-bottom:90px}
 
 .head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:18px}
-.brand h1{font-size:clamp(1.4rem,3.2vw,2rem);margin:0;font-weight:800}
+.brand h1{font-size:clamp(1.7rem,5vw,2.4rem);margin:0;font-weight:800;letter-spacing:.01em}
 .brand .sub{color:var(--ink-soft);font-size:.78rem;margin-top:3px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
 .sem{display:inline-flex;align-items:center;gap:8px;margin-top:10px}
 .sem .lbl{font-size:.66rem;color:var(--ink-faint);letter-spacing:.1em;text-transform:uppercase;font-weight:700}
@@ -122,7 +123,8 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .log .wk{font-size:.72rem;font-weight:700;color:var(--ink-faint);white-space:nowrap;min-width:38px}
 .log .tx{flex:1;font-size:.85rem}
 .log-empty{margin-top:9px;color:var(--ink-faint);font-style:italic;font-size:.84rem}
-.ib{appearance:none;background:none;border:none;cursor:pointer;color:var(--ink-faint);font-size:.9rem;padding:2px 5px;border-radius:6px;font-family:inherit}
+.ib{appearance:none;background:none;border:none;cursor:pointer;color:var(--ink-faint);font-size:.9rem;padding:3px 6px;border-radius:8px;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle}
+.ib:active{background:var(--surface-2)}
 .ib:hover{background:var(--surface-2);color:var(--ink)}
 .addrow{margin-top:10px}
 .addrow button{appearance:none;font-family:inherit;cursor:pointer;background:transparent;border:1px dashed var(--line-strong);color:var(--accent);border-radius:8px;padding:7px 12px;font-weight:700;font-size:.82rem;width:100%}
@@ -205,6 +207,14 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:v
   .summary-strip .s-item{min-width:0}
   .grid-cards{grid-template-columns:1fr}
 
+  /* 固定課表：手機填滿螢幕、縮小 */
+  .sched-scroll{overflow-x:visible}
+  .sched{min-width:0}
+  .sched thead th{padding:6px 2px;font-size:.62rem}
+  .sched .period{width:40px;padding:6px 2px;font-size:.62rem}
+  .sched .slot{min-height:44px;font-size:.6rem;padding:4px 2px;line-height:1.2}
+  .sched .slot .note{font-size:.54rem}
+
   /* 大一點的可點按鈕 */
   .ib{padding:6px 9px;font-size:1.05rem;min-width:34px}
   .pcard summary{padding:14px 14px}
@@ -220,8 +230,8 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:v
 <div class="wrap" id="app" style="display:none">
   <header class="head">
     <div class="brand">
-      <h1>教學管理台</h1>
-      <div class="sub">行事曆 · 進度 · 鐘點 · 時事</div>
+      <h1>江璿物理</h1>
+      <div class="sub">Jiangxuan Physics</div>
       <div class="sem"><span class="lbl">學期</span><select id="semSel"></select></div>
     </div>
     <div class="hstats" id="hstats"></div>
@@ -266,7 +276,7 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:v
     <div id="notesBody"></div>
   </section>
 
-  <footer><span>教學管理台 · 資料存於 Supabase</span><span id="updated"></span></footer>
+  <footer><span>江璿物理 · 資料存於 Supabase</span><span id="updated"></span></footer>
 </div>
 
 <div class="backdrop" id="backdrop"></div>
@@ -287,6 +297,7 @@ const pad = n => String(n).padStart(2,"0");
 const iso = (y,m,d) => `${y}-${pad(m)}-${pad(d)}`;
 const money = n => Number(n).toLocaleString("en-US");
 const shortClass = k => k.replace(/(學測|進度|銜接|代課)$/,"");
+const IC_PEN = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
 const mdLabel = s => { const p=s.split("-"); return `${+p[1]}/${+p[2]}`; };
 const addDays = (ds,n) => { const [y,m,d]=ds.split("-").map(Number); const dt=new Date(y,m-1,d); dt.setDate(dt.getDate()+n); return iso(dt.getFullYear(),dt.getMonth()+1,dt.getDate()); };
 function schoolColor(name){ const s=DB.schools.find(x=>x.name===name); return s?s.color:"#64748B"; }
@@ -392,9 +403,9 @@ function renderProgress(){
     const done=entries.filter(e=>e.kind==="done").sort((a,b)=>(b.session_date||"").localeCompare(a.session_date||"")).slice(0,4);
     const planned=entries.filter(e=>e.kind==="planned").sort((a,b)=>(b.session_date||"").localeCompare(a.session_date||""))[0];
     const title=c.school+" "+c.class_name+(c.track?`（${c.track}）`:"");
-    const nx=planned?`<div class="next"><span class="ntx"><span class="nd">${mdLabel(planned.session_date)}</span> ${planned.content}</span><button class="ib" onclick="event.stopPropagation();editPlanned(${planned.id})">✅✏️</button></div>`
+    const nx=planned?`<div class="next"><span class="ntx"><span class="nd">${mdLabel(planned.session_date)}</span> ${planned.content}</span><button class="ib" onclick="event.stopPropagation();editPlanned(${planned.id})">${IC_PEN}</button></div>`
       :`<div class="next"><span class="ntx" style="color:var(--ink-faint)">尚未安排下一堂</span><button class="ib" onclick="event.stopPropagation();addLesson('${c.school}','${c.class_name}','${c.track||""}','planned')">＋</button></div>`;
-    const log=done.length?`<ul class="log">${done.map(e=>`<li><span class="wk">${mdLabel(e.session_date)}</span><span class="tx">${e.content}</span><button class="ib" onclick="editLesson(${e.id})">✏️</button></li>`).join("")}</ul>`:`<div class="log-empty">尚無已上課紀錄。</div>`;
+    const log=done.length?`<ul class="log">${done.map(e=>`<li><span class="wk">${mdLabel(e.session_date)}</span><span class="tx">${e.content}</span><button class="ib" onclick="editLesson(${e.id})">${IC_PEN}</button></li>`).join("")}</ul>`:`<div class="log-empty">尚無已上課紀錄。</div>`;
     return `<details class="pcard" style="--sc:${schoolColor(c.school)}">
       <summary><span class="pc-tri">▸</span><div class="pc-head"><h3>${title}</h3><span class="pc-when">${c.subtitle||""}</span></div>${nx}</summary>
       <div class="pbody">${log}<div class="addrow"><button onclick="addLesson('${c.school}','${c.class_name}','${c.track||""}','done')">＋ 新增已上課內容</button></div></div>
