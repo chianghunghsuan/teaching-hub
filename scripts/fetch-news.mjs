@@ -7,10 +7,14 @@ const SUPABASE_PUBLISHABLE_KEY =
   process.env.SUPABASE_PUBLISHABLE_KEY ??
   "sb_publishable_l4cGpyjxQua5ICikOiGqqw_s-_gYVnB";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
-const GEMINI_URL =
-  process.env.GEMINI_URL ??
-  `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+// 依序嘗試，第一個能用的就採用（Google 換版也不會壞）
+const GEMINI_MODELS = (
+  process.env.GEMINI_MODEL ??
+  "gemini-flash-latest,gemini-3.6-flash,gemini-3.5-flash-lite,gemini-2.5-flash-lite,gemini-2.0-flash"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 const NEWS_TIME_ZONE = process.env.NEWS_TIME_ZONE ?? "Asia/Taipei";
 const NEWS_LOOKBACK_DAYS = parsePositiveInt(process.env.NEWS_LOOKBACK_DAYS, 2);
 const NEWS_MAX_CANDIDATE_AGE_DAYS = parsePositiveInt(
@@ -860,36 +864,51 @@ async function summarizeForClassroom(candidates) {
     '只輸出 JSON object，格式：{"items":[{"article_index":1,"tag":"科學","content":"..."}]}',
   ].join("\n");
 
-  const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: prompt }] },
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: JSON.stringify({ today, candidates }, null, 2) }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.25,
-        responseMimeType: "application/json",
-        maxOutputTokens: 8192,
+  const requestBody = JSON.stringify({
+    systemInstruction: { parts: [{ text: prompt }] },
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: JSON.stringify({ today, candidates }, null, 2) }],
       },
-    }),
+    ],
+    generationConfig: {
+      temperature: 0.25,
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+    },
   });
 
-  const bodyText = await response.text();
-  if (!response.ok) {
-    throw new Error(`Gemini request failed: ${response.status} ${bodyText}`);
+  let content = "";
+  let lastError = null;
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: requestBody,
+    });
+    const bodyText = await response.text();
+    if (response.ok) {
+      const body = JSON.parse(bodyText);
+      content =
+        body.candidates?.[0]?.content?.parts
+          ?.map((part) => part.text ?? "")
+          .join("") ?? "";
+      if (content) {
+        console.log(`Gemini model used: ${model}`);
+        break;
+      }
+      lastError = new Error(`Gemini ${model} returned no content.`);
+      continue;
+    }
+    lastError = new Error(
+      `Gemini ${model} failed: ${response.status} ${bodyText.slice(0, 200)}`,
+    );
+    if (response.status !== 404) break; // 非「找不到型號」的錯誤，換型號也沒用
   }
-
-  const body = JSON.parse(bodyText);
-  const content = body.candidates?.[0]?.content?.parts
-    ?.map((part) => part.text ?? "")
-    .join("");
   if (!content) {
-    throw new Error("Gemini response did not include content.");
+    throw lastError ?? new Error("Gemini: no working model.");
   }
 
   const candidateByIndex = new Map(
