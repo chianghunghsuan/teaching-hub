@@ -1,0 +1,16 @@
+{
+  "name": "teaching-hub",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch-news": "node scripts/fetch-news.mjs",
+    "fetch-news:dry-run": "node scripts/fetch-news.mjs --dry-run"
+  },
+  "dependencies": {
+    "fast-xml-parser": "5.10.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
