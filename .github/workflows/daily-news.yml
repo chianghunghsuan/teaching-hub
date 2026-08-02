@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  models: read
 
 jobs:
   fetch-news:
@@ -15,8 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      OPENAI_MODEL: gpt-4o-mini
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_MODELS_MODEL: openai/gpt-4o-mini
       SUPABASE_NEWS_URL: https://pytmyuuoerhrsytwjtbq.supabase.co/rest/v1/news
       SUPABASE_PUBLISHABLE_KEY: sb_publishable_l4cGpyjxQua5ICikOiGqqw_s-_gYVnB
       NEWS_TIME_ZONE: Asia/Taipei

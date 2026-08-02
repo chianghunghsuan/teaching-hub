@@ -6,8 +6,12 @@ const SUPABASE_NEWS_URL =
 const SUPABASE_PUBLISHABLE_KEY =
   process.env.SUPABASE_PUBLISHABLE_KEY ??
   "sb_publishable_l4cGpyjxQua5ICikOiGqqw_s-_gYVnB";
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+const GITHUB_MODELS_TOKEN = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+const GITHUB_MODELS_MODEL =
+  process.env.GITHUB_MODELS_MODEL ?? "openai/gpt-4o-mini";
+const GITHUB_MODELS_URL =
+  process.env.GITHUB_MODELS_URL ??
+  "https://models.github.ai/inference/chat/completions";
 const NEWS_TIME_ZONE = process.env.NEWS_TIME_ZONE ?? "Asia/Taipei";
 const NEWS_LOOKBACK_DAYS = parsePositiveInt(process.env.NEWS_LOOKBACK_DAYS, 2);
 const NEWS_CANDIDATES = parsePositiveInt(process.env.NEWS_CANDIDATES, 12);
@@ -83,8 +87,10 @@ main().catch((error) => {
 });
 
 async function main() {
-  if (!DRY_RUN && !OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is required. Add it as a GitHub secret.");
+  if (!DRY_RUN && !GITHUB_MODELS_TOKEN) {
+    throw new Error(
+      "GITHUB_TOKEN is required. GitHub Actions provides it automatically when models: read permission is enabled.",
+    );
   }
 
   console.log(`Fetching RSS candidates for ${today} (${NEWS_TIME_ZONE})...`);
@@ -105,13 +111,13 @@ async function main() {
         source_url,
       })),
     );
-    console.log("Dry run completed before OpenAI and Supabase calls.");
+    console.log("Dry run completed before GitHub Models and Supabase calls.");
     return;
   }
 
   const preparedItems = await summarizeForClassroom(candidates);
   if (preparedItems.length === 0) {
-    console.log("OpenAI returned no classroom-safe items. Nothing to insert.");
+    console.log("GitHub Models returned no classroom-safe items. Nothing to insert.");
     await cleanupOldNews();
     return;
   }
@@ -259,16 +265,17 @@ async function summarizeForClassroom(candidates) {
     '只輸出 JSON object，格式：{"items":[{"article_index":1,"tag":"科學","content":"..."}]}',
   ].join("\n");
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(GITHUB_MODELS_URL, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${OPENAI_API_KEY}`,
+      authorization: `Bearer ${GITHUB_MODELS_TOKEN}`,
+      accept: "application/vnd.github+json",
       "content-type": "application/json",
+      "x-github-api-version": "2026-03-10",
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model: GITHUB_MODELS_MODEL,
       temperature: 0.25,
-      response_format: { type: "json_object" },
       messages: [
         { role: "system", content: prompt },
         {
@@ -288,20 +295,22 @@ async function summarizeForClassroom(candidates) {
 
   const bodyText = await response.text();
   if (!response.ok) {
-    throw new Error(`OpenAI request failed: ${response.status} ${bodyText}`);
+    throw new Error(
+      `GitHub Models request failed: ${response.status} ${bodyText}`,
+    );
   }
 
   const body = JSON.parse(bodyText);
   const content = body.choices?.[0]?.message?.content;
   if (!content) {
-    throw new Error("OpenAI response did not include message content.");
+    throw new Error("GitHub Models response did not include message content.");
   }
 
   const candidateByIndex = new Map(
     candidates.map((item) => [item.article_index, item]),
   );
   const seenIndexes = new Set();
-  const parsed = JSON.parse(content);
+  const parsed = parseModelJsonContent(content);
   const items = toArray(parsed.items);
 
   return items
@@ -341,6 +350,33 @@ async function findExistingSourceUrls(sourceUrls) {
   }
 
   return existing;
+}
+
+function parseModelJsonContent(content) {
+  const trimmed = String(content ?? "").trim();
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Some model providers may still wrap JSON in a markdown fence.
+  }
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) {
+    try {
+      return JSON.parse(fenced[1].trim());
+    } catch {
+      // Fall through to object extraction below.
+    }
+  }
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    return JSON.parse(trimmed.slice(start, end + 1));
+  }
+
+  throw new Error("GitHub Models response was not valid JSON.");
 }
 
 async function insertNews(items) {
