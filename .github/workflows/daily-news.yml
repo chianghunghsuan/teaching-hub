@@ -16,7 +16,6 @@ jobs:
     timeout-minutes: 10
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_MODEL: gemini-2.5-flash
       SUPABASE_NEWS_URL: https://pytmyuuoerhrsytwjtbq.supabase.co/rest/v1/news
       SUPABASE_PUBLISHABLE_KEY: sb_publishable_l4cGpyjxQua5ICikOiGqqw_s-_gYVnB
       NEWS_TIME_ZONE: Asia/Taipei
