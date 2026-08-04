@@ -385,8 +385,8 @@ const rssFeeds = [
   googleNewsSearchFeed("台灣 教育 OR 學生 OR 大學 OR 高中 OR 校園 OR 志願 OR 科系"),
   googleNewsSearchFeed("台灣 科技業 OR 裁員 OR 徵才 OR 職缺 OR 工程師 OR 職涯", 7),
   googleNewsSearchFeed("台灣 物理奧林匹亞 OR 金牌 OR 科學班 OR 實驗高中 OR 科展 OR STEM", 14),
-  googleNewsSearchFeed("分科測驗 OR 學測 OR 指考 OR 落點分析 OR 放榜 OR 頂標 OR 大學申請 OR 個人申請 OR 繁星 OR 錄取分數", 6),
-  googleNewsSearchFeed("台灣 消費爭議 OR 食安 OR 個資 OR 詐騙 OR 易利委 OR EZ WAY OR 報關 OR 遊戲 OR 電玩 OR 寶可夢", 6),
+  googleNewsSearchFeed("分科測驗 OR 學測 OR 指考 OR 落點分析 OR 放榜 OR 頂標 OR 大學申請 OR 個人申請 OR 繁星 OR 錄取分數"),
+  googleNewsSearchFeed("台灣 消費爭議 OR 食安 OR 個資 OR 詐騙 OR 易利委 OR EZ WAY OR 報關 OR 遊戲 OR 電玩 OR 寶可夢"),
   googleNewsSearchFeed("台灣 物理奧林匹亞 OR 5面金牌 OR 國際物理奧林匹亞", 30),
   googleNewsSearchFeed("台灣 科學班 OR 實驗高中 科學班 OR 資優班", 30),
   googleNewsSearchFeed("台灣 教育政策 OR 校園 OR AI工具 OR 數位學習 OR 科學教育 OR 資優", 10),
@@ -912,54 +912,10 @@ async function summarizeForClassroom(candidates) {
     '只輸出 JSON object，格式：{"items":[{"article_index":1,"tag":"科學","content":"..."}]}',
   ].join("\n");
 
-  const requestBody = JSON.stringify({
-    systemInstruction: { parts: [{ text: prompt }] },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: JSON.stringify({ today, candidates: modelCandidates }, null, 2) },
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.25,
-      responseMimeType: "application/json",
-      maxOutputTokens: 65536,
-    },
+  const content = await geminiComplete(prompt, {
+    today,
+    candidates: modelCandidates,
   });
-
-  let content = "";
-  let lastError = null;
-  for (const model of GEMINI_MODELS) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: requestBody,
-    });
-    const bodyText = await response.text();
-    if (response.ok) {
-      const body = JSON.parse(bodyText);
-      content =
-        body.candidates?.[0]?.content?.parts
-          ?.map((part) => part.text ?? "")
-          .join("") ?? "";
-      if (content) {
-        console.log(`Gemini model used: ${model}`);
-        break;
-      }
-      lastError = new Error(`Gemini ${model} returned no content.`);
-      continue;
-    }
-    lastError = new Error(
-      `Gemini ${model} failed: ${response.status} ${bodyText.slice(0, 200)}`,
-    );
-    if (![404, 429, 500, 502, 503].includes(response.status)) break; // 暫時性錯誤就換下一個型號重試
-  }
-  if (!content) {
-    throw lastError ?? new Error("Gemini: no working model.");
-  }
 
   const candidateByIndex = new Map(
     candidates.map((item) => [item.article_index, item]),
@@ -968,7 +924,7 @@ async function summarizeForClassroom(candidates) {
   const parsed = parseModelJsonContent(content);
   const items = toArray(parsed.items);
 
-  return items
+  const results = items
     .map((item) => {
       const articleIndex = Number(item.article_index);
       const candidate = candidateByIndex.get(articleIndex);
@@ -988,6 +944,84 @@ async function summarizeForClassroom(candidates) {
     })
     .filter(Boolean)
     .slice(0, NEWS_TARGET_ITEMS);
+
+  // 硬保證：被標記 must_include 的升學新聞若被模型漏掉，就單獨產生一則放到最前面
+  const mustCand = modelCandidates.find((c) => c.must_include);
+  if (mustCand && !results.some((r) => r.source_url === mustCand.source_url)) {
+    try {
+      const one = await summarizeOne(mustCand);
+      if (one) results.unshift(one);
+      console.log("force-include 升學新聞：" + (one ? "已補上" : "產生失敗"));
+    } catch (error) {
+      console.warn(
+        "force-include 升學新聞失敗：" +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+  return results;
+}
+
+async function geminiComplete(systemText, userPayload) {
+  const requestBody = JSON.stringify({
+    systemInstruction: { parts: [{ text: systemText }] },
+    contents: [
+      { role: "user", parts: [{ text: JSON.stringify(userPayload, null, 2) }] },
+    ],
+    generationConfig: {
+      temperature: 0.25,
+      responseMimeType: "application/json",
+      maxOutputTokens: 65536,
+    },
+  });
+  let lastError = null;
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: requestBody,
+    });
+    const bodyText = await response.text();
+    if (response.ok) {
+      const body = JSON.parse(bodyText);
+      const content =
+        body.candidates?.[0]?.content?.parts
+          ?.map((part) => part.text ?? "")
+          .join("") ?? "";
+      if (content) {
+        console.log(`Gemini model used: ${model}`);
+        return content;
+      }
+      lastError = new Error(`Gemini ${model} returned no content.`);
+      continue;
+    }
+    lastError = new Error(
+      `Gemini ${model} failed: ${response.status} ${bodyText.slice(0, 200)}`,
+    );
+    if (![404, 429, 500, 502, 503].includes(response.status)) break;
+  }
+  throw lastError ?? new Error("Gemini: no working model.");
+}
+
+// 針對「一則」升學新聞單獨整理（force-include 用）
+async function summarizeOne(candidate) {
+  const sys = [
+    "你是一位很會把時事講成故事的台灣補習班理化／物理老師。把以下這一則升學或考試新聞，整理成給國高中學生的課堂分享。",
+    "用繁體中文，固定使用段落標籤（完全一致；除了標籤外，內文句子不要以冒號開頭）：摘要、課堂解釋、關鍵數據、延伸整合、反思結論、延伸討論。老師口吻、關鍵數字要判讀（這算多嗎、代表什麼），延伸討論每點用『問題？→ 參考方向：…（可查：真實來源）』。",
+    '只輸出 JSON：{"tag":"社會","content":"..."}；tag 固定用「社會」。',
+  ].join("\n");
+  const content = await geminiComplete(sys, { candidate });
+  const parsed = parseModelJsonContent(content) || {};
+  const text = String(parsed.content ?? "").trim();
+  if (!text) return null;
+  const tag = String(parsed.tag ?? "社會").trim();
+  return {
+    date: today,
+    tag: classroomTags.has(tag) ? tag : "社會",
+    content: text,
+    source_url: candidate.source_url,
+  };
 }
 
 async function findExistingSourceRows(sourceUrls) {
