@@ -887,6 +887,16 @@ async function summarizeForClassroom(candidates) {
     }
     return c;
   });
+  console.log(
+    "FLAGGED_ADMISSION:",
+    flaggedAdmission,
+    "|",
+    modelCandidates.filter((c) => c.must_include).map((c) => c.title).join(" ; "),
+  );
+  console.log(
+    "CANDIDATES:\n" +
+      candidates.map((c) => `${c.article_index}. ${c.title}`).join("\n"),
+  );
   const prompt = [
     "你是一位很會把時事『講成故事』的台灣補習班理化／物理老師，正在準備上課前 3~5 分鐘、跟國高中到大學生分享的小補充。你的目標不是摘要新聞，而是讓學生『聽得進去、覺得跟自己有關、想繼續聊』。文字要像老師在對學生說話，可以用『你們有沒有想過…』『我先問你們一件事…』這種口吻開場。",
     "請從候選新聞中挑出 6 到 8 則最適合課堂分享的內容。優先：學生升學、科系探索、職涯方向、日常生活、公共健康、食安、科學、科技、AI、機器人、半導體、能源、天氣、自然現象、太空、重大國際局勢，以及和學生生活相關又能延伸到學習或職涯的熱門題材（熱門遊戲與電玩產業、消費爭議、社會現象等）。",
