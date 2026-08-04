@@ -836,6 +836,14 @@ function normalizeRssItem(item, feedLabel) {
     return null;
   }
   const recencyScore = publishedTime ? Math.max(-48, 48 - Math.round(hoursOld)) : -100;
+  const admissionBonus =
+    countKeywordHits(haystack, ["分科","學測","指考","放榜","落點","頂標","五標","級分","繁星","申請入學","錄取分數"]) > 0
+      ? 80
+      : 0;
+  const hotLifeBonus =
+    countKeywordHits(haystack, ["易利委","EZ WAY","個資","詐騙","消費爭議","寶可夢","電玩","手遊"]) > 0
+      ? 40
+      : 0;
 
   return {
     title,
@@ -861,6 +869,8 @@ function normalizeRssItem(item, feedLabel) {
       weakSourcePenalty +
       officialCeremonyPenalty +
       sourceQualityBonus +
+      admissionBonus +
+      hotLifeBonus +
       recencyScore,
   };
 }
