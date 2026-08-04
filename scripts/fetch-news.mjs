@@ -86,6 +86,16 @@ const studentKeywords = [
   "教育",
   "校園",
   "科展",
+  "指考",
+  "放榜",
+  "落點",
+  "頂標",
+  "五標",
+  "級分",
+  "錄取",
+  "繁星",
+  "申請入學",
+  "分發",
 ];
 const industryKeywords = [
   "科技業",
@@ -133,6 +143,17 @@ const publicLifeKeywords = [
   "氣象",
   "颱風",
   "地震",
+  "消費",
+  "個資",
+  "詐騙",
+  "詐欺",
+  "報關",
+  "網購",
+  "遊戲",
+  "電玩",
+  "寶可夢",
+  "任天堂",
+  "手遊",
 ];
 const sensitiveKeywords = [
   "選舉",
@@ -340,6 +361,7 @@ const priorityTopicOrder = [
   "space",
   "science",
   "public-health",
+  "life",
   "economy",
   "global-conflict",
   "weather",
@@ -1466,12 +1488,40 @@ function candidateTopicKey(candidate) {
       "科學班",
       "奧林匹亞",
       "科展",
+      "分科",
+      "學測",
+      "指考",
+      "放榜",
+      "落點",
+      "頂標",
+      "五標",
+      "級分",
+      "錄取",
+      "繁星",
     ])
   ) {
     return "education";
   }
   if (hasKeyword(candidate, ["裁員", "徵才", "職缺", "工程師", "職涯"])) {
     return "career";
+  }
+  if (
+    hasKeyword(candidate, [
+      "消費",
+      "個資",
+      "詐騙",
+      "詐欺",
+      "報關",
+      "易利委",
+      "網購",
+      "遊戲",
+      "電玩",
+      "寶可夢",
+      "任天堂",
+      "手遊",
+    ])
+  ) {
+    return "life";
   }
   if (
     hasKeyword(candidate, [
