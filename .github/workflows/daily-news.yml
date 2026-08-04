@@ -2,8 +2,8 @@ name: Daily News
 
 on:
   schedule:
-    # 07:00 Asia/Taipei every day. GitHub cron uses UTC.
-    - cron: "0 23 * * *"
+    # 12:00 Asia/Taipei every day (04:00 UTC). GitHub cron uses UTC.
+    - cron: "0 4 * * *"
   workflow_dispatch:
 
 permissions:
@@ -19,13 +19,13 @@ jobs:
       SUPABASE_NEWS_URL: https://pytmyuuoerhrsytwjtbq.supabase.co/rest/v1/news
       SUPABASE_PUBLISHABLE_KEY: sb_publishable_l4cGpyjxQua5ICikOiGqqw_s-_gYVnB
       NEWS_TIME_ZONE: Asia/Taipei
-      NEWS_LOOKBACK_DAYS: "4"
-      NEWS_MAX_CANDIDATE_AGE_DAYS: "21"
-      NEWS_CANDIDATES: "26"
-      NEWS_TARGET_ITEMS: "8"
-      NEWS_MAX_PER_SOURCE: "5"
-      NEWS_MAX_PER_TOPIC: "3"
-      DELETE_NEWS_OLDER_THAN_DAYS: "30"
+      NEWS_LOOKBACK_DAYS: "14"
+      NEWS_MAX_CANDIDATE_AGE_DAYS: "16"
+      NEWS_CANDIDATES: "45"
+      NEWS_TARGET_ITEMS: "12"
+      NEWS_MAX_PER_SOURCE: "6"
+      NEWS_MAX_PER_TOPIC: "4"
+      DELETE_NEWS_OLDER_THAN_DAYS: "16"
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
