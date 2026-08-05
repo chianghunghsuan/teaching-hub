@@ -299,8 +299,7 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:v
   <section class="panel" id="p-rec" role="tabpanel">
     <p class="sec-intro">上課用手機錄音，下課選檔案上傳；電腦會自動轉文字、生成上課筆記與教學回饋。</p>
     <div class="moneycard" style="padding:15px 17px;margin-bottom:16px">
-      <div class="field"><label>上課日期</label><input type="date" id="recDate"></div>
-      <div class="field"><label>班級（選填）</label><input type="text" id="recLabel" placeholder="例如 龍譽高二"></div>
+      <div class="field"><label>選擇課堂（已上課、尚未上傳）</label><select id="recSession"></select></div>
       <div class="field"><label>音檔（手機錄音的 .m4a / .mp3）</label><input type="file" id="recFile" accept="audio/*"></div>
       <button id="recUpload" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:800;font-size:.95rem;cursor:pointer">上傳音檔</button>
       <div id="recMsg" style="font-size:.82rem;color:var(--ink-soft);margin-top:8px"></div>
@@ -682,7 +681,26 @@ function recBadge(s){
   const [t,c]=map[s]||["—","--ink-faint"];
   return `<span style="font-size:.72rem;font-weight:700;padding:2px 9px;border-radius:20px;color:var(${c});background:color-mix(in srgb,var(${c}) 14%,var(--surface));border:1px solid color-mix(in srgb,var(${c}) 35%,transparent)">${t}</span>`;
 }
+function eligibleSessions(){
+  const t=new Date();
+  const today=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
+  const uploaded=new Set((DB.recordings||[]).map(r=>`${r.class_date}|${r.class_label}`));
+  const seen=new Set(); const out=[];
+  (DB.sessions||[]).filter(s=>s.status!=="cancelled"&&s.date<=today)
+    .sort((a,b)=>b.date.localeCompare(a.date))
+    .forEach(s=>{ const label=`${s.school} ${s.class_name}`; const k=`${s.date}|${label}`;
+      if(seen.has(k)||uploaded.has(k))return; seen.add(k); out.push({date:s.date,label}); });
+  return out;
+}
+function fillSessionSelect(){
+  const sel=document.getElementById("recSession"); if(!sel)return;
+  const list=eligibleSessions();
+  sel.innerHTML=list.length
+    ? list.map(x=>`<option value="${x.date}|${x.label}">${mdLabel(x.date)} · ${x.label}</option>`).join("")
+    : `<option value="">（目前沒有待上傳的課堂）</option>`;
+}
 function renderRecordings(){
+  fillSessionSelect();
   const el=document.getElementById("recBody");
   const rows=(DB.recordings||[]).slice().sort((a,b)=>(b.created_at||"").localeCompare(a.created_at||""));
   if(!rows.length){ el.innerHTML=`<div class="empty">還沒有錄音。上面選音檔上傳試試。</div>`; return; }
@@ -707,10 +725,11 @@ function renderRecordings(){
 async function uploadRecording(){
   const btn=document.getElementById("recUpload");
   const file=document.getElementById("recFile").files[0];
-  const date=document.getElementById("recDate").value||null;
-  const label=document.getElementById("recLabel").value.trim()||null;
+  const sel=document.getElementById("recSession").value;
   const msg=document.getElementById("recMsg");
+  if(!sel){ msg.textContent="目前沒有待上傳的課堂可選。"; return; }
   if(!file){ msg.textContent="請先選一個音檔。"; return; }
+  const [date,label]=sel.split("|");
   const mb=(file.size/1048576).toFixed(0);
   btn.disabled=true; const old=btn.textContent; btn.textContent="上傳中…";
   msg.textContent=`上傳中（約 ${mb} MB），檔案大請耐心等，不要關掉頁面…`;
@@ -736,7 +755,6 @@ async function delRecording(id){
   toast("已刪除"); await reload();
 }
 document.getElementById("recUpload").onclick=uploadRecording;
-(function(){ const d=new Date(); document.getElementById("recDate").value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
 
 function renderAll(){ renderCalendar(); renderSalary(); renderProgress(); renderSched(); renderNotes(); renderRecordings(); renderLegend(document.getElementById("legend"),DB.schools.map(s=>s.name)); }
 (async()=>{
