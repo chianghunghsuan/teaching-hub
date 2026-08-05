@@ -261,6 +261,7 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:v
     <button class="tab" role="tab" data-p="progress">📈 課程進度</button>
     <button class="tab" role="tab" data-p="sched">🗓️ 固定課表</button>
     <button class="tab" role="tab" data-p="notes">💡 上課筆記</button>
+    <button class="tab" role="tab" data-p="rec">🎙️ 上課錄音</button>
   </nav>
 
   <section class="panel" id="p-cal" role="tabpanel">
@@ -295,6 +296,18 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:v
     <div id="notesBody"></div>
   </section>
 
+  <section class="panel" id="p-rec" role="tabpanel">
+    <p class="sec-intro">上課用手機錄音，下課選檔案上傳；電腦會自動轉文字、生成上課筆記與教學回饋。</p>
+    <div class="moneycard" style="padding:15px 17px;margin-bottom:16px">
+      <div class="field"><label>上課日期</label><input type="date" id="recDate"></div>
+      <div class="field"><label>班級（選填）</label><input type="text" id="recLabel" placeholder="例如 龍譽高二"></div>
+      <div class="field"><label>音檔（手機錄音的 .m4a / .mp3）</label><input type="file" id="recFile" accept="audio/*"></div>
+      <button id="recUpload" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:800;font-size:.95rem;cursor:pointer">上傳音檔</button>
+      <div id="recMsg" style="font-size:.82rem;color:var(--ink-soft);margin-top:8px"></div>
+    </div>
+    <div id="recBody"></div>
+  </section>
+
   <footer><span>江璿物理 · 資料存於 Supabase</span><span id="updated"></span></footer>
 </div>
 
@@ -327,7 +340,7 @@ let curSem=null, viewY=2026, viewM=8, curTab="cal";
 
 /* ===== 載入 ===== */
 async function loadAll(){
-  const tables=["schools","semesters","classes","recurring","sessions","progress","exams","holidays","news"];
+  const tables=["schools","semesters","classes","recurring","sessions","progress","exams","holidays","news","recordings"];
   const res=await Promise.all(tables.map(t=>sb.from(t).select("*")));
   res.forEach((r,i)=>{ if(r.error) throw new Error(tables[i]+": "+r.error.message); DB[tables[i]]=r.data; });
   DB.schools.sort((a,b)=>a.sort_order-b.sort_order);
@@ -662,7 +675,70 @@ const semSel=document.getElementById("semSel");
 semSel.onchange=()=>{ curSem=DB.semesters.find(s=>s.code===semSel.value); renderSalary(); const [y,m]=curSem.start_date.split("-").map(Number); viewY=y;viewM=m; renderCalendar(); };
 
 /* ===== 全部重繪 + 啟動 ===== */
-function renderAll(){ renderCalendar(); renderSalary(); renderProgress(); renderSched(); renderNotes(); renderLegend(document.getElementById("legend"),DB.schools.map(s=>s.name)); }
+/* ===== 上課錄音 ===== */
+const escRec = s => String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function recBadge(s){
+  const map={uploaded:["待處理","--warn"],processing:["處理中…","--accent"],done:["完成","--good"],error:["失敗","--crit"]};
+  const [t,c]=map[s]||["—","--ink-faint"];
+  return `<span style="font-size:.72rem;font-weight:700;padding:2px 9px;border-radius:20px;color:var(${c});background:color-mix(in srgb,var(${c}) 14%,var(--surface));border:1px solid color-mix(in srgb,var(${c}) 35%,transparent)">${t}</span>`;
+}
+function renderRecordings(){
+  const el=document.getElementById("recBody");
+  const rows=(DB.recordings||[]).slice().sort((a,b)=>(b.created_at||"").localeCompare(a.created_at||""));
+  if(!rows.length){ el.innerHTML=`<div class="empty">還沒有錄音。上面選音檔上傳試試。</div>`; return; }
+  el.innerHTML=rows.map(r=>{
+    const title=`${r.class_date?mdLabel(r.class_date):"（未填日期）"}${r.class_label?" · "+escRec(r.class_label):""}`;
+    let body="";
+    if(r.status==="done"){
+      body=`<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;color:var(--accent);padding:4px 0">📝 上課筆記與教學回饋</summary>`+
+        (r.notes?`<div style="margin-top:8px"><b>上課筆記</b><div style="white-space:pre-wrap;font-size:.9rem;line-height:1.55;margin-top:3px">${escRec(r.notes)}</div></div>`:"")+
+        (r.feedback?`<div style="margin-top:12px"><b>教學回饋</b><div style="white-space:pre-wrap;font-size:.9rem;line-height:1.55;margin-top:3px">${escRec(r.feedback)}</div></div>`:"")+
+        `</details>`;
+    } else if(r.status==="error"){
+      body=`<div style="color:var(--crit);font-size:.82rem;margin-top:5px">${escRec(r.error_msg||"處理失敗")}</div>`;
+    } else if(r.status==="processing"){
+      body=`<div style="color:var(--ink-faint);font-size:.82rem;margin-top:5px">電腦正在轉文字＋整理中…</div>`;
+    } else {
+      body=`<div style="color:var(--ink-faint);font-size:.82rem;margin-top:5px">已上傳，等電腦的監看程式處理。</div>`;
+    }
+    return `<div class="note-card"><div class="nmeta" style="display:flex;justify-content:space-between;align-items:center"><span>${title}</span>${recBadge(r.status)}</div>${body}<button class="ib" style="margin-top:8px" onclick="delRecording(${r.id})">🗑️ 刪除</button></div>`;
+  }).join("");
+}
+async function uploadRecording(){
+  const btn=document.getElementById("recUpload");
+  const file=document.getElementById("recFile").files[0];
+  const date=document.getElementById("recDate").value||null;
+  const label=document.getElementById("recLabel").value.trim()||null;
+  const msg=document.getElementById("recMsg");
+  if(!file){ msg.textContent="請先選一個音檔。"; return; }
+  const mb=(file.size/1048576).toFixed(0);
+  btn.disabled=true; const old=btn.textContent; btn.textContent="上傳中…";
+  msg.textContent=`上傳中（約 ${mb} MB），檔案大請耐心等，不要關掉頁面…`;
+  try{
+    const safe=file.name.replace(/[^\w.\-]/g,"_");
+    const path=`${date||"nodate"}/${Date.now()}_${safe}`;
+    const up=await sb.storage.from("recordings").upload(path,file,{contentType:file.type||"audio/mp4"});
+    if(up.error) throw up.error;
+    const ins=await sb.from("recordings").insert({class_date:date,class_label:label,audio_filename:path,status:"uploaded"});
+    if(ins.error) throw ins.error;
+    msg.textContent="✅ 上傳完成！電腦會自動處理，稍後回來看筆記。";
+    document.getElementById("recFile").value="";
+    await reload();
+  }catch(e){ msg.textContent="錯誤："+(e.message||e); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+async function delRecording(id){
+  if(!confirm("刪除這筆錄音紀錄?"))return;
+  const r=(DB.recordings||[]).find(x=>x.id===id);
+  try{ if(r&&r.audio_filename) await sb.storage.from("recordings").remove([r.audio_filename]); }catch(e){}
+  const {error}=await sb.from("recordings").delete().eq("id",id);
+  if(error)return toast("錯誤:"+error.message);
+  toast("已刪除"); await reload();
+}
+document.getElementById("recUpload").onclick=uploadRecording;
+(function(){ const d=new Date(); document.getElementById("recDate").value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
+
+function renderAll(){ renderCalendar(); renderSalary(); renderProgress(); renderSched(); renderNotes(); renderRecordings(); renderLegend(document.getElementById("legend"),DB.schools.map(s=>s.name)); }
 (async()=>{
   try{
     await loadAll();
