@@ -297,10 +297,9 @@ footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:v
   </section>
 
   <section class="panel" id="p-rec" role="tabpanel">
-    <p class="sec-intro">上課用手機錄音，下課選檔案上傳；電腦會自動轉文字、生成上課筆記與教學回饋。</p>
     <div class="moneycard" style="padding:15px 17px;margin-bottom:16px">
       <div class="field"><label>選擇課堂（已上課、尚未上傳）</label><select id="recSession"></select></div>
-      <div class="field"><label>音檔（手機錄音的 .m4a / .mp3；若檔案變灰選不到，這裡已放寬可選任何檔）</label><input type="file" id="recFile"></div>
+      <div class="field"><label>請選擇音檔</label><input type="file" id="recFile"></div>
       <button id="recUpload" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:800;font-size:.95rem;cursor:pointer">上傳音檔</button>
       <div id="recMsg" style="font-size:.82rem;color:var(--ink-soft);margin-top:8px"></div>
     </div>
@@ -688,7 +687,7 @@ function eligibleSessions(){
   const seen=new Set(); const out=[];
   (DB.sessions||[]).filter(s=>s.status!=="cancelled"&&s.date<=today)
     .sort((a,b)=>b.date.localeCompare(a.date))
-    .forEach(s=>{ const label=`${s.school} ${s.class_name}`; const k=`${s.date}|${label}`;
+    .forEach(s=>{ const label=(s.school==="其他"?(s.location||"其他"):s.school)+" "+s.class_name; const k=`${s.date}|${label}`;
       if(seen.has(k)||uploaded.has(k))return; seen.add(k); out.push({date:s.date,label}); });
   return out;
 }
