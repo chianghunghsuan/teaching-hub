@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   fetch-news:
@@ -41,3 +41,27 @@ jobs:
 
       - name: Fetch RSS, summarize, and insert news
         run: npm run fetch-news
+
+      # Keep-alive: runs even if the news step failed (if: always()).
+      # 1) Daily Supabase request -> project never hits 7-day inactivity pause.
+      # 2) Weekly heartbeat commit -> repo stays active so GitHub never
+      #    auto-disables this scheduled workflow (60-day inactivity rule).
+      - name: Keep-alive (DB active + schedule alive)
+        if: always()
+        run: |
+          echo "Pinging Supabase to keep the project active..."
+          curl -s -o /dev/null -w "supabase ping: HTTP %{http_code}\n" \
+            "${SUPABASE_NEWS_URL}?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" || echo "ping failed (non-fatal)"
+
+          mkdir -p .github
+          echo "last keep-alive week: $(date -u +%G-W%V)  (updated $(date -u +%Y-%m-%dT%H:%M:%SZ) UTC)" > .github/keepalive.txt
+          git add .github/keepalive.txt
+          if git diff --cached --quiet; then
+            echo "Heartbeat unchanged this week - no commit needed."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: weekly keep-alive heartbeat"
+            git push && echo "Heartbeat committed." || echo "push failed (non-fatal)"
+          fi
